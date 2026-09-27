@@ -1,0 +1,44 @@
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*.so
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+
+# ---- 环境与密钥 ----
+.env
+!.env.example
+
+# ---- 日志 / 诊断输出 ----
+*.log
+*_err.txt
+*_out.txt
+*_diag.txt
+diag_*.txt
+pb_verify.txt
+
+# ---- Node / 前端构建产物 ----
+node_modules/
+frontend/dist/
+dist/
+npm-debug.log*
+
+# ---- 中间产物 / 临时 ----
+temp/
+logs/
+
+# ---- 数据备份与垃圾回收 ----
+data/trash/
+data/backup_*/
+data/chroma/
+*.bak
+*.bak_*
+
+# ---- 编辑器 / 系统 ----
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
