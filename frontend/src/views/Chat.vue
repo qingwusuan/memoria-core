@@ -634,8 +634,9 @@ async function regenerate(i) {
 // ──────────── 输入框自适应 ────────────
 function scrollToBottom() {
   nextTick(() => {
-    const box = document.querySelector('.msg-list')
-    if (box) box.scrollTop = box.scrollHeight
+    // 聊天滚动容器类名是 .chat-body（见 template ref="bodyRef"），
+    // 修复误用 .msg-list 选择器导致的滚动失效
+    if (bodyRef.value) bodyRef.value.scrollTop = bodyRef.value.scrollHeight
   })
 }
 

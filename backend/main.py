@@ -9,6 +9,7 @@ import datetime
 import json
 import os
 import re
+import threading
 import time
 import uuid
 from contextlib import asynccontextmanager
@@ -363,8 +364,36 @@ def search_snippets_api(q: str = Query(...), top_k: int = 5):
 # 聊天会话持久化
 # ═══════════════════════════════════════════════════════════════
 
-def _chat_logs_dir():
-    d = Path(config.DATA_DIR) / "chat_logs" / (_current_persona_name or "default")
+# 会话写文件线程锁：并发/中断时防止 JSON 写坏（配合临时文件 + os.replace 原子替换）
+_session_write_lock = threading.Lock()
+
+
+def _atomic_write_text(file: Path, text: str):
+    """线程安全 + 原子写入：先写同目录 .tmp 临时文件，再 os.replace 原子替换。
+
+    即使进程在写入中途崩溃，目标文件也只会是旧版本或新版本，不会是半截 JSON。
+    """
+    tmp = file.with_name(file.name + ".tmp")
+    with _session_write_lock:
+        tmp.write_text(text, encoding="utf-8")
+        os.replace(str(tmp), str(file))
+
+
+def _safe_session_id(session_id: str) -> str:
+    """会话 ID 只允许 [A-Za-z0-9_-]，防御路径穿越（session_id 直接拼文件名）。"""
+    if not session_id or not re.fullmatch(r"[A-Za-z0-9_-]+", session_id):
+        raise HTTPException(400, "非法的会话 ID")
+    return session_id
+
+
+def _chat_logs_dir(persona: str | None = None):
+    """返回指定角色的会话目录；persona 缺省时取当前激活角色。
+
+    注意：路由入口必须在请求开始时锁定 persona 快照并显式传入，
+    避免请求中途切换角色导致在途请求写错目录（串档）。
+    """
+    pname = persona or _current_persona_name or "default"
+    d = Path(config.DATA_DIR) / "chat_logs" / pname
     d.mkdir(parents=True, exist_ok=True)
     return d
 
@@ -376,15 +405,20 @@ class SessionMessages(BaseModel):
 
 @app.post("/api/chat/sessions")
 def create_session(req: SessionCreate):
-    sid = datetime.datetime.now().strftime("%Y%m%d%H%M%S") + "_" + uuid.uuid4().hex[:6]
+    # 请求开始时锁定角色快照，避免中途切换角色导致串档
+    persona = _current_persona_name or "default"
+    # 会话 ID 独立生成：时间戳 + 足够长的随机段，与角色无关但几乎不可能碰撞
+    # （历史曾出现跨角色同名会话文件，见第 5 项评估报告）
+    sid = datetime.datetime.now().strftime("%Y%m%d%H%M%S") + "_" + uuid.uuid4().hex[:12]
     title = req.title or "新对话"
-    file = _chat_logs_dir() / f"{sid}.json"
-    file.write_text(json.dumps({"id": sid, "title": title, "messages": [], "created_at": datetime.datetime.now().isoformat()}, ensure_ascii=False), encoding="utf-8")
+    file = _chat_logs_dir(persona) / f"{sid}.json"
+    _atomic_write_text(file, json.dumps({"id": sid, "title": title, "messages": [], "created_at": datetime.datetime.now().isoformat()}, ensure_ascii=False))
     return {"session_id": sid, "title": title}
 
 @app.get("/api/chat/sessions")
 def list_sessions():
-    d = _chat_logs_dir()
+    persona = _current_persona_name or "default"
+    d = _chat_logs_dir(persona)
     if not d.exists():
         return {"sessions": []}
     sessions = []
@@ -399,7 +433,9 @@ def list_sessions():
 
 @app.get("/api/chat/sessions/{session_id}")
 def get_session(session_id: str):
-    file = _chat_logs_dir() / f"{session_id}.json"
+    persona = _current_persona_name or "default"
+    _safe_session_id(session_id)
+    file = _chat_logs_dir(persona) / f"{session_id}.json"
     if not file.exists():
         raise HTTPException(404, "会话不存在")
     data = json.loads(file.read_text(encoding="utf-8"))
@@ -407,7 +443,9 @@ def get_session(session_id: str):
 
 @app.put("/api/chat/sessions/{session_id}")
 def save_session(session_id: str, req: SessionMessages):
-    file = _chat_logs_dir() / f"{session_id}.json"
+    persona = _current_persona_name or "default"
+    _safe_session_id(session_id)
+    file = _chat_logs_dir(persona) / f"{session_id}.json"
     data = {}
     if file.exists():
         data = json.loads(file.read_text(encoding="utf-8"))
@@ -416,12 +454,14 @@ def save_session(session_id: str, req: SessionMessages):
     first_msg = req.messages[0]["content"][:24] if req.messages else "空对话"
     if not data.get("title") or data["title"] == "新对话":
         data["title"] = first_msg
-    file.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+    _atomic_write_text(file, json.dumps(data, ensure_ascii=False))
     return {"ok": True, "title": data.get("title")}
 
 @app.delete("/api/chat/sessions/{session_id}")
 def delete_session(session_id: str):
-    file = _chat_logs_dir() / f"{session_id}.json"
+    persona = _current_persona_name or "default"
+    _safe_session_id(session_id)
+    file = _chat_logs_dir(persona) / f"{session_id}.json"
     if not file.exists():
         raise HTTPException(404, "会话不存在")
     file.unlink()
@@ -694,6 +734,26 @@ def replace_sensitive_points(req: list[SensitivePointRequest]):
 # 角色管理
 # ═══════════════════════════════════════════════════════════════
 
+# ── 角色名校验（路径穿越防御）──
+_PERSONA_NAME_RE = re.compile(r"^[\u4e00-\u9fffA-Za-z0-9_-]+$")
+
+
+def _safe_persona_name(name: str) -> str:
+    """统一校验角色名，拒绝路径穿越与非法字符。
+
+    只允许中文/英文/数字/下划线/连字符；拒绝空串、首尾空白、
+    控制字符以及任何路径分隔符（..、/、\\）。非法时抛 HTTPException(400)。
+    所有把 {name} 拼进文件路径的路由/函数必须在文件系统操作前调用本函数。
+    """
+    if not name or not isinstance(name, str):
+        raise HTTPException(400, "角色名不能为空")
+    if name.strip() != name or "\x00" in name:
+        raise HTTPException(400, "角色名不能包含首尾空白或控制字符")
+    if not _PERSONA_NAME_RE.match(name):
+        raise HTTPException(400, "角色名只能包含中文、英文、数字、下划线与连字符")
+    return name
+
+
 def list_persona_files() -> list[str]:
     """列出所有 persona JSON 文件名（不含扩展名）"""
     if not PERSONAS_DIR.exists():
@@ -704,7 +764,8 @@ def list_persona_files() -> list[str]:
 
 
 def load_persona(name: str) -> dict | None:
-    """加载指定角色"""
+    """加载指定角色；name 非法时抛 400，防止路径穿越读写目录外文件。"""
+    _safe_persona_name(name)
     file = PERSONAS_DIR / f"{name}.json"
     if not file.exists():
         return None
@@ -712,7 +773,8 @@ def load_persona(name: str) -> dict | None:
 
 
 def save_persona(name: str, guide: str):
-    """保存角色到磁盘"""
+    """保存角色到磁盘；name 非法时抛 400，防止路径穿越写入目录外。"""
+    _safe_persona_name(name)
     PERSONAS_DIR.mkdir(parents=True, exist_ok=True)
     file = PERSONAS_DIR / f"{name}.json"
     data = {"name": name, "guide": guide, "updated_at": time.time()}
@@ -724,7 +786,12 @@ def list_personas():
     names = list_persona_files()
     result = []
     for name in names:
-        p = load_persona(name)
+        try:
+            p = load_persona(name)
+        except HTTPException:
+            # 历史遗留非法文件名（如含路径分隔符）不再可读，跳过而非让整个列表 500
+            print(f"[main] 跳过非法角色文件名: {name!r}", flush=True)
+            continue
         if p:
             result.append(PersonaResponse(
                 name=p.get("name", name),
@@ -748,6 +815,7 @@ def get_persona(name: str):
 
 @app.post("/api/personas", response_model=PersonaResponse)
 def create_persona(req: PersonaRequest):
+    _safe_persona_name(req.name)
     if load_persona(req.name):
         raise HTTPException(409, f"角色 '{req.name}' 已存在")
     save_persona(req.name, req.guide)
@@ -756,6 +824,8 @@ def create_persona(req: PersonaRequest):
 
 @app.put("/api/personas/{name}", response_model=PersonaResponse)
 def update_persona(name: str, req: PersonaRequest):
+    _safe_persona_name(name)  # URL 参数（旧名）
+    _safe_persona_name(req.name)  # 请求体（新名，改名场景）
     if not load_persona(name):
         raise HTTPException(404, f"角色 '{name}' 不存在")
     save_persona(req.name, req.guide)
@@ -799,6 +869,7 @@ def _save_active_persona(name: str):
 @app.post("/api/personas/{name}/activate")
 def activate_persona(name: str):
     global _current_persona_name
+    _safe_persona_name(name)
     if not load_persona(name):
         raise HTTPException(404, f"角色 '{name}' 不存在")
     _current_persona_name = name
@@ -879,6 +950,7 @@ def _cleanup_old_trash(backup_root: Path, days: int = 7):
 
 @app.delete("/api/personas/{name}")
 def delete_persona(name: str):
+    _safe_persona_name(name)
     file = PERSONAS_DIR / f"{name}.json"
     if not file.exists():
         raise HTTPException(404, f"角色 '{name}' 不存在")

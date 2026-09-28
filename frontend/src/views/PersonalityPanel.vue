@@ -85,7 +85,15 @@ const sorted = computed(() => {
 })
 
 async function load() {
-  try { const r = await api.getPersonality(); data.value = r.data; await nextTick(); drawRadar() } catch {}
+  try {
+    const r = await api.getPersonality()
+    data.value = r.data
+    await nextTick()
+    drawRadar()
+  } catch (e) {
+    data.value = null
+    alert('加载性格数据失败：' + (e.response?.data?.detail || e.message))
+  }
 }
 
 function drawRadar() {
@@ -137,7 +145,12 @@ function drawPoly(ctx, vals, color, alpha) {
 
 async function reset() {
   if (!confirm('确定重置所有性格数据？此操作不可撤销。')) return
-  await api.resetPersonality(); data.value = null
+  try {
+    await api.resetPersonality()
+    data.value = null
+  } catch (e) {
+    alert('重置失败：' + (e.response?.data?.detail || e.message))
+  }
 }
 
 onMounted(load)

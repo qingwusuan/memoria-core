@@ -49,9 +49,13 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, nextTick } from 'vue'
+import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
 import * as d3 from 'd3'
 import api from '../api.js'
+
+// 力导向模拟与缩放行为引用：draw 时赋值，onUnmounted 时停止/解绑，避免内存泄漏
+let sim = null
+let zoomBehavior = null
 
 const svgRef = ref(null)
 const nodes = ref([])
@@ -93,13 +97,14 @@ function draw() {
   if (!svgRef.value || !visibleNodes.value.length) return
   const svg = d3.select(svgRef.value); svg.selectAll('*').remove()
   const W = svgRef.value.clientWidth || 900, H = svgRef.value.clientHeight || 520
-  const sim = d3.forceSimulation(visibleNodes.value)
+  sim = d3.forceSimulation(visibleNodes.value)
     .force('charge', d3.forceManyBody().strength(-140))
     .force('center', d3.forceCenter(W/2, H/2))
     .force('collide', d3.forceCollide(36))
 
   const g = svg.append('g')
-  svg.call(d3.zoom().scaleExtent([0.25, 4]).on('zoom', e => g.attr('transform', e.transform)))
+  zoomBehavior = d3.zoom().scaleExtent([0.25, 4]).on('zoom', e => g.attr('transform', e.transform))
+  svg.call(zoomBehavior)
 
   const node = g.selectAll('g.node-group').data(visibleNodes.value).join('g')
     .attr('class', 'node-group').style('cursor', 'pointer')
@@ -125,6 +130,15 @@ function draw() {
 }
 
 onMounted(load)
+
+onUnmounted(() => {
+  // 停止力导向模拟并解绑缩放行为，避免组件销毁后 d3 定时器/监听器继续运行
+  if (sim) { sim.stop(); sim = null }
+  if (zoomBehavior && svgRef.value) {
+    d3.select(svgRef.value).on('.zoom', null)
+    zoomBehavior = null
+  }
+})
 </script>
 
 <style scoped>

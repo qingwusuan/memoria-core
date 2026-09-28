@@ -30,7 +30,8 @@ npm-debug.log*
 temp/
 logs/
 
-# ---- 数据备份与垃圾回收 ----
+# ---- 运行时数据（含隐私对话/人格状态，一律不入库）----
+data/
 data/trash/
 data/backup_*/
 data/chroma/

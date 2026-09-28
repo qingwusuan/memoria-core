@@ -104,7 +104,15 @@ const newName = ref('')
 const newGuide = ref('')
 const bgPress = ref(false)
 
-async function load() { const r = await api.listPersonas(); personas.value = r.data }
+async function load() {
+  try {
+    const r = await api.listPersonas()
+    personas.value = r.data
+  } catch (e) {
+    personas.value = []
+    alert('加载角色列表失败：' + (e.response?.data?.detail || e.message))
+  }
+}
 function select(p) { detail.value = p; editText.value = p.guide; editing.value = false }
 function closeDetailIfBg() {
   // 仅当 mousedown 也发生在遮罩背景上才关闭，
@@ -112,15 +120,24 @@ function closeDetailIfBg() {
   if (bgPress.value) { detail.value = null; bgPress.value = false }
 }
 async function activate() {
-  await api.activatePersona(detail.value.name); await load()
-  detail.value = personas.value.find(x => x.name === detail.value.name)
+  try {
+    await api.activatePersona(detail.value.name)
+    await load()
+    detail.value = personas.value.find(x => x.name === detail.value.name)
+  } catch (e) {
+    alert('启用角色失败：' + (e.response?.data?.detail || e.message))
+  }
 }
 async function toggleEdit() {
   if (editing.value) {
-    await api.updatePersona(detail.value.name, editText.value)
-    detail.value.guide = editText.value
-    editing.value = false
-    await load()
+    try {
+      await api.updatePersona(detail.value.name, editText.value)
+      detail.value.guide = editText.value
+      editing.value = false
+      await load()
+    } catch (e) {
+      alert('保存角色失败：' + (e.response?.data?.detail || e.message))
+    }
   } else {
     editText.value = detail.value.guide
     editing.value = true
@@ -128,11 +145,24 @@ async function toggleEdit() {
 }
 async function remove() {
   if (!confirm(`确定删除「${detail.value.name}」？`)) return
-  await api.deletePersona(detail.value.name); detail.value = null; await load()
+  try {
+    await api.deletePersona(detail.value.name)
+    detail.value = null
+    await load()
+  } catch (e) {
+    alert('删除角色失败：' + (e.response?.data?.detail || e.message))
+  }
 }
 async function create() {
-  await api.createPersona(newName.value.trim(), newGuide.value)
-  showCreate.value = false; newName.value = ''; newGuide.value = ''; await load()
+  try {
+    await api.createPersona(newName.value.trim(), newGuide.value)
+    showCreate.value = false
+    newName.value = ''
+    newGuide.value = ''
+    await load()
+  } catch (e) {
+    alert('创建角色失败：' + (e.response?.data?.detail || e.message))
+  }
 }
 onMounted(load)
 </script>
