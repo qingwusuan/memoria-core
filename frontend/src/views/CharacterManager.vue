@@ -80,7 +80,7 @@
         </div>
         <div class="field">
           <label>角色指南</label>
-          <textarea v-model="newGuide" rows="11" placeholder="描述性格、背景、说话风格、情感模式与特殊设定…&#10;&#10;例：你是林子欣，一个外冷内热的高中生。说话简短、偶尔毒舌…"></textarea>
+          <textarea v-model="newGuide" rows="11" placeholder="描述性格、背景、说话风格、情感模式与特殊设定…&#10;&#10;例：你是小夏，一个外冷内热的高中生。说话简短、偶尔毒舌…"></textarea>
         </div>
         <div class="modal-ft">
           <button class="btn" @click="showCreate = false">取消</button>

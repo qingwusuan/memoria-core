@@ -135,7 +135,7 @@
             <input
               v-model="nickInput"
               class="nick-input"
-              placeholder="输入昵称，如：影幢"
+              placeholder="输入昵称，如：用户"
               maxlength="10"
               @keydown.enter="saveNick"
             />

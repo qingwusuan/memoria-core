@@ -25,7 +25,7 @@ def build_prompt(
     top_k_memories: int = 6,
     scene_hint: str = "",
     instructions: Optional[list[str]] = None,
-    user_nickname: str = "影幢",
+    user_nickname: str = "用户",
     action: str = "",
 ) -> str:
     """
@@ -114,7 +114,7 @@ def build_system_prompt(
     *,
     suggest_normal: bool = False,
     suggest_naughty: bool = False,
-    user_nickname: str = "影幢",
+    user_nickname: str = "用户",
 ) -> str:
     """构建 system prompt（角色固定指令）。"""
     base = (
@@ -243,7 +243,7 @@ def build_chat_messages(
     suggest_naughty: bool = False,
     scene_hint: str = "",
     instructions: Optional[list[str]] = None,
-    user_nickname: str = "影幢",
+    user_nickname: str = "用户",
     action: str = "",
 ) -> tuple[str, str]:
     """
@@ -298,7 +298,7 @@ def build_chat_messages(
 
 # ── 内部辅助 ──
 
-def _build_time_aware(character_name: str, user_nickname: str = "影幢") -> str:
+def _build_time_aware(character_name: str, user_nickname: str = "用户") -> str:
     """生成时间感知描述文本。"""
     now = datetime.now()
     weekday_map = ["一", "二", "三", "四", "五", "六", "日"]
@@ -335,7 +335,7 @@ if __name__ == "__main__":
     print("Prompt 拼接器验收测试")
     print("=" * 60)
 
-    guide = """你是林子欣，18岁女高中生，性格活泼带刺。
+    guide = """你是小夏，18岁女高中生，性格活泼带刺。
 你喜欢用略带傲娇的语气说话，心里其实很在意对方。
 你有一条建议栏，分为"普通建议"和"坏坏建议"。"""
 
@@ -349,10 +349,10 @@ if __name__ == "__main__":
     current = "我保证这次不鸽你。"
 
     # ── 无性格注入 ──
-    prompt = build_prompt(guide, recent, current, character_name="林子欣")
+    prompt = build_prompt(guide, recent, current, character_name="小夏")
     print("\n【无性格注入】")
     print(prompt[:500] + "..." if len(prompt) > 500 else prompt)
-    assert "林子欣设定" in prompt
+    assert "小夏设定" in prompt
     assert "近期对话" in prompt
     assert "我保证这次不鸽你" in prompt
     assert "你昨天为什么生气" in prompt
@@ -367,20 +367,20 @@ if __name__ == "__main__":
     ]
     p.intimacy = 0.25
 
-    prompt2 = build_prompt(guide, recent, current, personality=p, character_name="林子欣")
+    prompt2 = build_prompt(guide, recent, current, personality=p, character_name="小夏")
     print("\n【带性格注入】")
     assert "当前性格注入" in prompt2
     assert "亲密意愿" in prompt2 or "她" in prompt2  # 至少包含模板生成的描述
     print("  ✓ 性格注入已嵌入")
 
     # ── build_chat_messages ──
-    sys_p, usr_p = build_chat_messages(guide, recent, current, personality=p, character_name="林子欣")
-    assert "你是林子欣" in sys_p
+    sys_p, usr_p = build_chat_messages(guide, recent, current, personality=p, character_name="小夏")
+    assert "你是小夏" in sys_p
     assert "不要跳出角色" in sys_p
     print("\n  ✓ build_chat_messages 拆分正确")
 
     # ── 时间感知 ──
-    time_block = _build_time_aware("林子欣")
+    time_block = _build_time_aware("小夏")
     assert "今天是" in time_block
     print(f"  ✓ 时间感知: {time_block}")
 

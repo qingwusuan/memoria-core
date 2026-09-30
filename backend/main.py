@@ -40,7 +40,7 @@ USER_NICKNAME_FILE = config.USER_NICKNAME_FILE
 
 
 def load_user_nickname() -> str:
-    """读取用户自定义昵称；文件不存在或内容非法时返回默认昵称「影幢」。"""
+    """读取用户自定义昵称；文件不存在或内容非法时返回默认昵称「用户」。"""
     try:
         if USER_NICKNAME_FILE.exists():
             data = json.loads(USER_NICKNAME_FILE.read_text("utf-8"))
@@ -281,7 +281,7 @@ async def get_stats():
 
 @app.get("/api/user/profile")
 def get_user_profile():
-    """查询用户资料：返回当前自定义昵称（默认「影幢」）。"""
+    """查询用户资料：返回当前自定义昵称（默认「用户」）。"""
     return {"nickname": load_user_nickname()}
 
 
@@ -305,7 +305,7 @@ async def chat(req: ChatRequest, background_tasks: BackgroundTasks):
     guide = persona.get("guide", "") if persona else ""
     char_name = persona.get("name", "角色") if persona else "角色"
 
-    # 用户昵称：读取自定义昵称（默认「影幢」），注入 prompt 让模型在叙事中用昵称称呼用户
+    # 用户昵称：读取自定义昵称（默认「用户」），注入 prompt 让模型在叙事中用昵称称呼用户
     user_nickname = load_user_nickname()
     # 接续对话（带"(接续对话)"前缀 或 全新会话无 history）时，加载导入记录末尾场景作为检索锚点，
     # 避免短句检索把记忆拉向泛化场景导致回复场景偏离。
@@ -552,7 +552,7 @@ def _parse_tail_turns(text: str, max_turns: int = 6) -> list[dict]:
     turns: list[dict] = []
 
     user_pat = re.compile(r"^(?:\*\*)?(?:用户|我)(?:\*\*)?[:：]\s*(.*)$")
-    ai_pat = re.compile(r"^(?:\*\*)?(?:AI|助手|林子欣)(?:\*\*)?[:：]\s*(.*)$")
+    ai_pat = re.compile(r"^(?:\*\*)?(?:AI|助手|小夏)(?:\*\*)?[:：]\s*(.*)$")
     scene_pat = re.compile(r"^>?\s*\*+[^*]+\*+$")
     suggestion_pat = re.compile(r"^(?:普通建议|坏坏建议)[:：]")
 

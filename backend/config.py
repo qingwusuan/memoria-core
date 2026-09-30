@@ -13,7 +13,7 @@ CHROMA_DIR = DATA_DIR / "chroma"
 PERSONAS_DIR = DATA_DIR / "personas"
 PROMPTS_DIR = ROOT / "prompts"
 USER_NICKNAME_FILE = DATA_DIR / "user_nickname.json"
-DEFAULT_USER_NICKNAME = "影幢"
+DEFAULT_USER_NICKNAME = "用户"
 
 # 自动加载 .env（如果存在）
 env_path = ROOT / ".env"

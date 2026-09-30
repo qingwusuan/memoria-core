@@ -1,3 +1,14 @@
+---
+AIGC:
+    Label: "1"
+    ContentProducer: 001191440300708461136T1XGW3
+    ProduceID: 1d11071d6eca2a79359fe2319426a411_184b7144bc1e11f189c8525400393706
+    ReservedCode1: kVg6O5Z9oQUy6kFZTQw7Rt44imCwrihD4I869NtflrYZXRTAohFxdj2nf3EbsEGJCn08PXFLqSGG+1zuFzrNdc3haPJV1O5OpYRSIyraE9eELOGpS1ZZP9pz92B49Ojlg+kaNgjaTxwktsxHrLIRICfvgs16DDUc+sHztWP0QyZlIXa38vAtT95GYGI=
+    ContentPropagator: 001191440300708461136T1XGW3
+    PropagateID: 1d11071d6eca2a79359fe2319426a411_184b7144bc1e11f189c8525400393706
+    ReservedCode2: kVg6O5Z9oQUy6kFZTQw7Rt44imCwrihD4I869NtflrYZXRTAohFxdj2nf3EbsEGJCn08PXFLqSGG+1zuFzrNdc3haPJV1O5OpYRSIyraE9eELOGpS1ZZP9pz92B49Ojlg+kaNgjaTxwktsxHrLIRICfvgs16DDUc+sHztWP0QyZlIXa38vAtT95GYGI=
+---
+
 # Memoria Core
 
 Memoria Core 是一个本地部署的 **AI 陪伴 / 角色扮演聊天应用**：由 FastAPI 提供后端服务，Vue 3 提供前端界面，ChromaDB + 中文向量模型（bge-small-zh-v1.5）为角色提供**长期记忆**。角色会记住你们之间发生过的事（关系里程碑、偏好、约定、亲密互动等），并通过一套 11 维双层性格引擎持续演化自己的"人格"。
@@ -35,7 +46,7 @@ Memoria Core 是一个本地部署的 **AI 陪伴 / 角色扮演聊天应用**�
 - **历史对话导入与场景锚定**
   - 支持粘贴文本或上传文件批量导入历史对话，自动按场景标记拆片、提取事件与片段；记录导入末尾场景，接续对话时自动锚定场景。
 - **用户昵称**
-  - 自定义被称呼的昵称（默认"影幢"），叙事正文中严格使用该昵称指代用户。
+  - 自定义被称呼的昵称（默认"用户"），叙事正文中严格使用该昵称指代用户。
 
 ---
 
@@ -302,7 +313,7 @@ PUT /api/user/profile                     # 更新昵称 { nickname }
 | `data/personalities/{角色}/state.json` | 每个角色的 11 维双层性格状态、了解度、敏感点表 |
 | `data/chat_logs/{角色}/` | 每个角色的对话会话记录（JSON） |
 | `data/last_scenes/` | 导入记录末尾场景锚点（供接续对话定位场景） |
-| `data/user_nickname.json` | 用户昵称（默认"影幢"） |
+| `data/user_nickname.json` | 用户昵称（默认"用户"） |
 | `data/active_persona.json` | 当前活跃角色 |
 | `data/trash/` | 删除角色前的备份 |
 
@@ -357,3 +368,4 @@ A：换端口启动即可，如 `uvicorn backend.main:app --port 8001`；若同�
 ## 说明
 
 本项目为个人 / 学习用途的本地应用，运行所需的 LLM API Key 与 Embedding 模型均需自行准备。文档中的功能与接口均以仓库代码实际实现为准。
+*（内容由AI生成，仅供参考）*
