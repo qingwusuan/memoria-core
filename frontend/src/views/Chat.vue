@@ -209,9 +209,12 @@
 </template>
 
 <script setup>
-import { ref, computed, nextTick, onMounted, watch } from 'vue'
+import { ref, computed, nextTick, onMounted, onUnmounted, watch } from 'vue'
 import api from '../api.js'
 import { instructCats, instructs } from '../instructs.js'
+
+// 在途聊天请求取消控制器：组件卸载时 abort，防止旧响应覆盖新会话状态
+const abortController = new AbortController()
 
 const messages = ref([])
 const input = ref('')
@@ -324,6 +327,11 @@ onMounted(async () => {
     await switchSession(sessions.value[0].id)
   }
   inputRef.value?.focus()
+})
+
+// 离开页面时取消所有在途聊天请求，防止旧响应覆盖新会话状态
+onUnmounted(() => {
+  abortController.abort()
 })
 
 watch(messages, () => {
@@ -473,10 +481,11 @@ async function regenerateAfterEdit(userIdx) {
     const r = await api.chat(lastMsg.content, history, {
       suggest_normal: suggestNormal.value,
       suggest_naughty: suggestNaughty.value,
-    })
+    }, { signal: abortController.signal })
     messages.value.push({ role: 'assistant', content: r.data.reply })
     persistSession()
   } catch (e) {
+    if (e?.code === 'ERR_CANCELED' || e?.name === 'CanceledError') return
     messages.value.push({ role: 'assistant', content: '（请求失败，请检查后端是否运行）' })
   } finally {
     loading.value = false
@@ -592,10 +601,11 @@ async function send() {
       suggest_normal: suggestNormal.value,
       suggest_naughty: suggestNaughty.value,
       instructions: cmdPayloads,
-    })
+    }, { signal: abortController.signal })
     messages.value.push({ role: 'assistant', content: r.data.reply })
     persistSession()
   } catch (e) {
+    if (e?.code === 'ERR_CANCELED' || e?.name === 'CanceledError') return
     messages.value.push({ role: 'assistant', content: '（请求失败，请检查后端是否运行）' })
   } finally {
     loading.value = false
@@ -621,10 +631,11 @@ async function regenerate(i) {
     const r = await api.chat(lastMsg.content, history, {
       suggest_normal: suggestNormal.value,
       suggest_naughty: suggestNaughty.value,
-    })
+    }, { signal: abortController.signal })
     messages.value.push({ role: 'assistant', content: r.data.reply })
     persistSession()
   } catch (e) {
+    if (e?.code === 'ERR_CANCELED' || e?.name === 'CanceledError') return
     messages.value.push({ role: 'assistant', content: '（请求失败，请检查后端是否运行）' })
   } finally {
     loading.value = false

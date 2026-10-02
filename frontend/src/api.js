@@ -4,7 +4,7 @@ const api = axios.create({ baseURL: '/api', timeout: 30000 })
 
 export default {
   getStats: () => api.get('/stats'),
-  chat: (message, history, options = {}) => api.post('/chat', { message, history, ...options }, { timeout: 300000 }),
+  chat: (message, history, options = {}, config = {}) => api.post('/chat', { message, history, ...options }, { timeout: 300000, ...config }),
   ingestDialogue: (dialogue, runPersonality = false) =>
     api.post('/dialogue/ingest', { dialogue, run_personality: runPersonality }),
   uploadDialogue: (formData) => api.post('/dialogue/upload', formData, {
