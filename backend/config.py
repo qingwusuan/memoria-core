@@ -52,6 +52,19 @@ CHROMA_SIMILARITY_TOP_K = int(os.getenv("CHROMA_SIMILARITY_TOP_K", "10"))
 DEFAULT_DECAY_PER_DAY = float(os.getenv("DEFAULT_DECAY_PER_DAY", "0.02"))
 MIN_IMPORTANCE_TO_KEEP = float(os.getenv("MIN_IMPORTANCE_TO_KEEP", "0.0"))
 
+# 混合检索评分权重：相似度 / 重要性 / 时间新鲜度，三者归一后加权求和。
+# 纯向量检索会让「早就说过的重要约定」被「刚刚提过的小事」挤掉。
+MEMORY_WEIGHT_SIMILARITY = float(os.getenv("MEMORY_WEIGHT_SIMILARITY", "0.60"))
+MEMORY_WEIGHT_IMPORTANCE = float(os.getenv("MEMORY_WEIGHT_IMPORTANCE", "0.25"))
+MEMORY_WEIGHT_RECENCY = float(os.getenv("MEMORY_WEIGHT_RECENCY", "0.15"))
+
+# ---------- 上下文预算 ----------
+# 送入 LLM 的近期对话最多占多少 token；超出部分进入滚动摘要，而不是无限堆叠。
+HISTORY_TOKEN_BUDGET = int(os.getenv("HISTORY_TOKEN_BUDGET", "6000"))
+# 被挤出窗口的对话累积多少轮才触发一次摘要（避免每轮都多打一次 LLM）。
+SUMMARY_MIN_NEW_TURNS = int(os.getenv("SUMMARY_MIN_NEW_TURNS", "4"))
+SUMMARY_MAX_CHARS = int(os.getenv("SUMMARY_MAX_CHARS", "900"))
+
 # ---------- 路径检查 ----------
 CHROMA_DIR.mkdir(parents=True, exist_ok=True)
 PERSONAS_DIR.mkdir(parents=True, exist_ok=True)

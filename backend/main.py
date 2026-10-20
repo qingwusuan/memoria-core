@@ -221,6 +221,7 @@ class ChatRequest(BaseModel):
     suggest_naughty: bool = False  # 是否在回复末尾附「坏坏建议」
     instructions: list[str] = []   # 指令中心选中的指令 payload，注入给模型执行
     action: str = ""               # 用户要执行的「动作」（独立于消息，不当作说的话/发的消息）
+    session_id: str = ""           # 会话 id：用于按会话持久化「滚动摘要」
 
 
 class ChatResponse(BaseModel):
@@ -328,6 +329,7 @@ async def chat(req: ChatRequest, background_tasks: BackgroundTasks):
             suggest_normal=req.suggest_normal,
             suggest_naughty=req.suggest_naughty,
             instructions=req.instructions,
+            session_id=req.session_id,
         )
     else:
         # 兜底：Agent 未初始化时不回复（正常流程 lifespan 已初始化）

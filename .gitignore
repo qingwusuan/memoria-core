@@ -30,6 +30,9 @@ npm-debug.log*
 temp/
 logs/
 output/
+.testdeps/
+.piptmp/
+.venv-test/
 
 # ---- 运行时数据（含隐私对话/人格状态，一律不入库）----
 data/

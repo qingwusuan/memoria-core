@@ -14,6 +14,7 @@ import logging
 from typing import Callable, Optional
 
 from backend.engines import memory
+from backend.engines import context
 from backend.agents.base import Agent
 from backend.agents.personality import PersonalityAnalyzerAgent
 from backend.agents.responder import ResponderAgent
@@ -53,6 +54,7 @@ class Orchestrator:
         suggest_normal: bool,
         suggest_naughty: bool,
         instructions: list,
+        session_id: str = "",
     ) -> tuple[str, Optional[dict], Optional[Callable[[], None]]]:
         """同步执行本轮完整对话，返回 (reply, snapshot, store_task)。
 
@@ -69,10 +71,21 @@ class Orchestrator:
             self._personality.apply_sensitive_points(message or action)
             self._personality.save()
 
-        # ── 2. 主回复（同步）──
+        # ── 2. 上下文预算：近期对话按 token 预算截取，挤出的前缀滚动摘要 ──
+        recent_dialogue, dropped = context.split_by_budget(history)
+        early_summary = ""
+        if dropped:
+            try:
+                early_summary = context.maybe_update_summary(
+                    self._persona, session_id, dropped
+                )
+            except Exception as e:  # 摘要链路失败不能挡住回复
+                _logger.warning("滚动摘要不可用，本轮跳过: %s", e)
+
+        # ── 3. 主回复（同步）──
         reply = self._responder.run(
             character_guide=character_guide,
-            recent_dialogue=history[-20:],
+            recent_dialogue=recent_dialogue,
             current_message=message,
             personality=self._personality.state,
             character_name=character_name,
@@ -82,9 +95,10 @@ class Orchestrator:
             instructions=instructions,
             user_nickname=user_nickname,
             action=action,
+            early_summary=early_summary,
         )
 
-        # ── 3. 事件入库判定（条件化，异步）──
+        # ── 4. 事件入库判定（条件化，异步）──
         store_task = self._build_store_task(
             reply, message, action, character_name
         )
