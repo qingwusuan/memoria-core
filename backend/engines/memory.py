@@ -665,6 +665,37 @@ def get_collection_stats(persona: str = "default") -> dict:
     }
 
 
+def restore_memories(persona: str, export: dict) -> dict:
+    """把 `memories.json` 导出快照写回 Chroma（回收站恢复用）。
+
+    用 upsert 而不是 add：同一个 id 重复恢复不会产生重复记忆。
+    """
+    _, ev_coll, sn_coll, _ = _get_chroma(persona)
+    stats = {"events": 0, "snippets": 0, "error": None}
+
+    for key, coll in (("events", ev_coll), ("snippets", sn_coll)):
+        rows = (export or {}).get(key) or []
+        ids, documents, metadatas = [], [], []
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            rid = row.get("id")
+            doc = row.get("document")
+            if not rid or doc is None:
+                continue
+            meta = row.get("metadata") or {}
+            if not isinstance(meta, dict):
+                meta = {}
+            ids.append(str(rid))
+            documents.append(str(doc))
+            metadatas.append(meta)
+        if ids:
+            coll.upsert(ids=ids, documents=documents, metadatas=metadatas)
+            stats[key] = len(ids)
+
+    return stats
+
+
 def wipe_memories(persona: str = "default"):
     """清空当前角色的所有记忆（事件 + 片段）。"""
     global _chroma_client

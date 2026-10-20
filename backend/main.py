@@ -25,6 +25,7 @@ from pydantic import BaseModel
 from backend import config
 from backend.engines import memory, personality, prompt_builder
 from backend.engines import context as context_engine
+from backend.engines import trash as trash_engine
 from backend.engines.personality import PersonalityState, SensitivePoint
 from backend.agents.personality import PersonalityAnalyzerAgent
 from backend.agents.responder import ResponderAgent
@@ -938,6 +939,14 @@ def _backup_persona(name: str, backup_root: Path) -> Path:
             )
     except Exception as e:
         print(f"[main] 备份角色 {name} 记忆库失败: {e}", flush=True)
+    # 6) 元数据：恢复时据此确定角色名，不依赖目录名解析
+    try:
+        (dest / "meta.json").write_text(
+            json.dumps({"persona": name, "created_at": time.time()}, ensure_ascii=False, indent=2),
+            "utf-8",
+        )
+    except OSError as e:
+        print(f"[main] 备份角色 {name} 元数据失败: {e}", flush=True)
     return dest
 
 
@@ -1006,6 +1015,39 @@ def delete_persona(name: str):
         except Exception as e:
             print(f"[main] 删除激活角色记录失败: {e}", flush=True)
     return {"status": "ok", "backup": str(backup_dir)}
+
+
+# ═══════════════════════════════════════════════════════════════
+# 回收站：列出 / 恢复 / 彻底删除
+# ═══════════════════════════════════════════════════════════════
+
+@app.get("/api/trash")
+def list_trash():
+    """列出删除备份（角色名、时间、大小、包含的部分）。"""
+    return {"items": trash_engine.list_backups()}
+
+
+@app.post("/api/trash/{backup_id}/restore")
+def restore_trash(backup_id: str, overwrite: bool = Query(False)):
+    """整体恢复：角色定义 / 性格 / 聊天 / 摘要 / 场景 / 记忆库。
+
+    目标角色已存在时默认拒绝；确认覆盖需显式传 overwrite=true。
+    """
+    try:
+        result = trash_engine.restore_backup(backup_id, overwrite=overwrite)
+    except trash_engine.TrashError as e:
+        raise HTTPException(404 if "不存在" in str(e) else 409, str(e))
+    return {"status": "ok", **result}
+
+
+@app.delete("/api/trash/{backup_id}")
+def purge_trash(backup_id: str):
+    """彻底删除一个备份（不可恢复）。"""
+    try:
+        trash_engine.purge_backup(backup_id)
+    except trash_engine.TrashError as e:
+        raise HTTPException(404 if "不存在" in str(e) else 400, str(e))
+    return {"status": "ok", "purged": backup_id}
 
 
 # ═══════════════════════════════════════════════════════════════

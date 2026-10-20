@@ -295,6 +295,18 @@ DELETE /api/personas/{name}               # 删除角色（先备份到 data/tra
 POST   /api/personas/{name}/activate      # 切换当前活跃角色
 ```
 
+### 回收站
+
+```
+GET    /api/trash                         # 列出删除备份（角色名 / 时间 / 大小 / 包含部分）
+POST   /api/trash/{backup_id}/restore     # 整体恢复；?overwrite=true 才允许覆盖同名角色
+DELETE /api/trash/{backup_id}             # 彻底删除备份（不可恢复）
+```
+
+恢复是整体的：角色定义、性格状态、聊天记录、滚动摘要、场景锚点、记忆库
+（`memories.json` 回写 Chroma）一起还原；任一前置条件不满足时在写入前报错，
+不会留下半个角色。备份默认保留 7 天，之后在下次删除角色时自动清理。
+
 ### 用户资料
 
 ```
@@ -318,7 +330,7 @@ PUT /api/user/profile                     # 更新昵称 { nickname }
 | `data/last_scenes/` | 导入记录末尾场景锚点（供接续对话定位场景） |
 | `data/user_nickname.json` | 用户昵称（默认"用户"） |
 | `data/active_persona.json` | 当前活跃角色 |
-| `data/trash/` | 删除角色前的备份 |
+| `data/trash/` | 删除角色前的完整备份（角色定义 / 性格 / 聊天 / 摘要 / 场景 / 记忆导出），支持回收站整体恢复 |
 
 其他目录：
 - `prompts/event_extraction.txt`：事件提取提示词模板；
