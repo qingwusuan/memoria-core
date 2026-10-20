@@ -24,6 +24,7 @@ from pydantic import BaseModel
 
 from backend import config
 from backend.engines import memory, personality, prompt_builder
+from backend.engines import context as context_engine
 from backend.engines.personality import PersonalityState, SensitivePoint
 from backend.agents.personality import PersonalityAnalyzerAgent
 from backend.agents.responder import ResponderAgent
@@ -902,6 +903,10 @@ def _backup_persona(name: str, backup_root: Path) -> Path:
     cdir = config.DATA_DIR / "chat_logs" / name
     if cdir.exists():
         shutil.copytree(str(cdir), str(dest / "chat_logs"), dirs_exist_ok=True)
+    # 3.5) 滚动摘要目录（剧情梗概，与 chat_logs 同级隐私）
+    sdir = context_engine.summary_dir(name)
+    if sdir.exists():
+        shutil.copytree(str(sdir), str(dest / "summaries"), dirs_exist_ok=True)
     # 4) 末尾场景记录
     d = config.DATA_DIR / "last_scenes"
     if d.exists():
@@ -972,6 +977,11 @@ def delete_persona(name: str):
     cdir = config.DATA_DIR / "chat_logs" / name
     if cdir.exists():
         shutil.rmtree(str(cdir))
+    # 清理该角色的滚动摘要（剧情梗概，不能留在磁盘上）
+    try:
+        context_engine.delete_persona_summaries(name)
+    except Exception as e:
+        print(f"[main] 清理角色 {name} 滚动摘要失败: {e}", flush=True)
     # 清理该角色的记忆库
     memory.wipe_memories(persona=name)
     # 清理该角色的末尾场景记录

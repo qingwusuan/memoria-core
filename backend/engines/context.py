@@ -11,6 +11,7 @@ import hashlib
 import json
 import logging
 import re
+import shutil
 import time
 from pathlib import Path
 from typing import Callable, Optional
@@ -94,6 +95,32 @@ class SummaryStore:
         with tmp.open("w", encoding="utf-8") as f:
             json.dump(payload, f, ensure_ascii=False, indent=2)
         tmp.replace(self.path)
+
+
+def summary_dir(persona: str) -> Path:
+    """某个角色的摘要目录。"""
+    return config.DATA_DIR / "summaries" / _safe_persona(persona)
+
+
+def list_persona_summaries(persona: str) -> list[str]:
+    """列出某角色已落盘的摘要会话 id（供管理 / 自检用）。"""
+    directory = summary_dir(persona)
+    if not directory.exists():
+        return []
+    return sorted(p.stem for p in directory.glob("*.json"))
+
+
+def delete_persona_summaries(persona: str) -> bool:
+    """删除某角色的全部滚动摘要，返回是否真的删掉了东西。
+
+    删除角色时必须调用：摘要里是剧情梗概，和 chat_logs 同级隐私，
+    不能因为角色被删就留在磁盘上。
+    """
+    directory = summary_dir(persona)
+    if not directory.exists():
+        return False
+    shutil.rmtree(directory, ignore_errors=True)
+    return True
 
 
 def _sanitize_session(session_id: str) -> str:

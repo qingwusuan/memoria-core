@@ -314,7 +314,7 @@ PUT /api/user/profile                     # 更新昵称 { nickname }
 | `data/personas/` | 角色定义（角色指南） |
 | `data/personalities/{角色}/state.json` | 每个角色的 11 维双层性格状态、了解度、敏感点表 |
 | `data/chat_logs/{角色}/` | 每个角色的对话会话记录（JSON） |
-| `data/summaries/{角色}/{会话}.json` | 滚动摘要：已压缩的早前剧情与覆盖进度 |
+| `data/summaries/{角色}/{会话}.json` | 滚动摘要：已压缩的早前剧情与覆盖进度（删除角色时连同备份一起清理） |
 | `data/last_scenes/` | 导入记录末尾场景锚点（供接续对话定位场景） |
 | `data/user_nickname.json` | 用户昵称（默认"用户"） |
 | `data/active_persona.json` | 当前活跃角色 |
@@ -383,3 +383,8 @@ A：换端口启动即可，如 `uvicorn backend.main:app --port 8001`；若同�
 ## 说明
 
 本项目为个人 / 学习用途的本地应用，运行所需的 LLM API Key 与 Embedding 模型均需自行准备。文档中的功能与接口均以仓库代码实际实现为准。
+
+## 许可证
+
+[PolyForm Noncommercial 1.0.0](./LICENSE)：允许个人学习、研究、兴趣项目与非营利组织使用，**不允许商业用途**。注意它**不是** OSI 认可的开源许可证；如果你需要允许商用的授权，请另行联系作者。
+
