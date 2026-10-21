@@ -34,25 +34,19 @@
 
     <!-- 右侧聊天区 -->
     <div class="chat-main">
-      <div class="chat-toolbar" v-if="providers.length">
-        <label class="tb-item">
-          <span class="tb-label">视角</span>
-          <select v-model="narrativePerson" @change="saveNarrative" :disabled="settingsSaving">
-            <option value="third">第三人称</option>
-            <option value="first">第一人称</option>
-          </select>
-        </label>
-        <label class="tb-item">
-          <span class="tb-label">模型</span>
-          <select v-model="provider" @change="saveProvider" :disabled="settingsSaving">
-            <option
-              v-for="p in providers" :key="p.id" :value="p.id" :disabled="!p.has_key"
-            >
-              {{ p.label }}{{ p.has_key ? '' : '（未配置 Key）' }}
-            </option>
-          </select>
-        </label>
-        <span class="tb-model">{{ currentModel }}</span>
+      <div class="chat-toolbar">
+        <span class="tb-current">
+          视角 {{ narrativePerson === 'first' ? '第一人称' : '第三人称' }}
+          <span class="tb-sep">·</span>
+          {{ currentModel || '未配置模型' }}
+        </span>
+        <button class="tb-settings" @click="openSettings" title="对话设置">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+            <circle cx="12" cy="12" r="3"/>
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+          </svg>
+          设置
+        </button>
       </div>
       <div class="chat-body" ref="bodyRef">
         <div v-if="!messages.length && !loading" class="chat-empty">
@@ -225,6 +219,62 @@
         </div>
       </div>
     </div>
+
+    <!-- 对话设置 -->
+    <div class="settings-overlay" v-if="showSettings" @click.self="closeSettings">
+      <div class="settings-modal">
+        <header class="st-hd">
+          <h3>对话设置</h3>
+          <button class="st-close" @click="closeSettings">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"/></svg>
+          </button>
+        </header>
+
+        <section class="st-sec">
+          <h4>叙事视角</h4>
+          <p class="st-desc">决定角色怎么说话。切换只影响之后的新回复。</p>
+          <div class="st-options">
+            <button
+              class="st-opt" :class="{ active: draftPerson === 'third' }"
+              @click="draftPerson = 'third'"
+            >
+              <b>第三人称</b>
+              <span>像小说作者描写她：动作、神态、心理，读起来像在看书。</span>
+            </button>
+            <button
+              class="st-opt" :class="{ active: draftPerson === 'first' }"
+              @click="draftPerson = 'first'"
+            >
+              <b>第一人称</b>
+              <span>她以「我」跟你说话，更像在对话，而不是旁白。</span>
+            </button>
+          </div>
+        </section>
+
+        <section class="st-sec">
+          <h4>模型</h4>
+          <p class="st-desc">切换后下一次回复就用新模型；只显示已配置 Key 的供应商。</p>
+          <div class="st-options">
+            <button
+              v-for="p in providers" :key="p.id"
+              class="st-opt" :class="{ active: draftProvider === p.id }"
+              :disabled="!p.has_key"
+              @click="draftProvider = p.id"
+            >
+              <b>{{ p.label }}</b>
+              <span>{{ p.model }}{{ p.has_key ? '' : ' · 未配置 Key' }}</span>
+            </button>
+          </div>
+        </section>
+
+        <footer class="st-ft">
+          <button class="st-btn" @click="closeSettings">取消</button>
+          <button class="st-btn primary" :disabled="settingsSaving" @click="saveSettings">
+            {{ settingsSaving ? '保存中…' : '保存' }}
+          </button>
+        </footer>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -380,6 +430,39 @@ async function saveProvider() {
   } catch (e) {
     alert('切换模型失败：' + (e.response?.data?.detail || e.message))
     await loadSettings()
+  } finally {
+    settingsSaving.value = false
+  }
+}
+
+// 设置窗口
+const showSettings = ref(false)
+const draftPerson = ref('third')
+const draftProvider = ref('')
+
+function openSettings() {
+  draftPerson.value = narrativePerson.value
+  draftProvider.value = provider.value
+  showSettings.value = true
+}
+
+function closeSettings() {
+  showSettings.value = false
+}
+
+async function saveSettings() {
+  settingsSaving.value = true
+  try {
+    const patch = {}
+    if (draftPerson.value !== narrativePerson.value) patch.narrative_person = draftPerson.value
+    if (draftProvider.value && draftProvider.value !== provider.value) patch.provider = draftProvider.value
+    if (Object.keys(patch).length) {
+      const r = await api.updateSettings(patch)
+      applySettings(r.data)
+    }
+    showSettings.value = false
+  } catch (e) {
+    alert('保存失败：' + (e.response?.data?.detail || e.message))
   } finally {
     settingsSaving.value = false
   }
@@ -852,22 +935,66 @@ function autoResize() {
   flex: 1; display: flex; flex-direction: column; min-width: 0;
 }
 
-/* 运行时设置条：视角 / 模型 */
+/* 运行时设置条 */
 .chat-toolbar {
-  display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
-  padding: 8px 20px; border-bottom: 1px solid rgba(255,255,255,0.05);
-  font-size: 12px; color: #777;
+  display: flex; align-items: center; gap: 12px;
+  padding: 7px 20px; border-bottom: 1px solid rgba(255,255,255,0.05);
+  font-size: 12px; color: #6E6E6E;
 }
-.tb-item { display: inline-flex; align-items: center; gap: 6px; }
-.tb-label { color: #666; }
-.chat-toolbar select {
-  background: #141414; color: #BBB; border: 1px solid rgba(255,255,255,0.08);
-  border-radius: 6px; padding: 3px 7px; font-size: 12px; outline: none;
+.tb-current { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tb-sep { color: #3A3A3A; margin: 0 4px; }
+.tb-settings {
+  margin-left: auto; display: inline-flex; align-items: center; gap: 5px;
+  background: transparent; border: 1px solid rgba(255,255,255,0.08);
+  color: #888; border-radius: 6px; padding: 3px 9px; font-size: 12px;
+  cursor: pointer; transition: all 0.15s; font-family: inherit;
+}
+.tb-settings:hover { color: #CCC; border-color: rgba(255,255,255,0.18); }
+
+/* 对话设置弹窗 */
+.settings-overlay {
+  position: fixed; inset: 0; z-index: 200; display: flex;
+  align-items: center; justify-content: center;
+  background: rgba(0,0,0,0.6); backdrop-filter: blur(3px); padding: 16px;
+}
+.settings-modal {
+  width: min(560px, 100%); max-height: 86vh; overflow-y: auto;
+  background: #101010; border: 1px solid rgba(255,255,255,0.07);
+  border-radius: 14px; padding: 20px 22px 16px;
+  box-shadow: 0 24px 64px rgba(0,0,0,0.55);
+}
+.st-hd { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+.st-hd h3 { font-size: 16px; font-weight: 600; color: #E0E0E0; }
+.st-close { background: none; border: none; color: #555; cursor: pointer; padding: 4px; border-radius: 6px; }
+.st-close:hover { color: #CCC; background: rgba(255,255,255,0.05); }
+.st-sec { margin-top: 18px; }
+.st-sec h4 { font-size: 13px; font-weight: 600; color: #BBB; margin-bottom: 3px; }
+.st-desc { font-size: 12px; color: #5E5E5E; line-height: 1.6; margin-bottom: 10px; }
+.st-options { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.st-opt {
+  text-align: left; background: #161616; border: 1px solid rgba(255,255,255,0.06);
+  border-radius: 9px; padding: 11px 12px; cursor: pointer;
+  display: flex; flex-direction: column; gap: 4px; transition: all 0.15s;
   font-family: inherit;
 }
-.chat-toolbar select:hover { border-color: rgba(255,255,255,0.16); }
-.chat-toolbar select:disabled { opacity: 0.5; }
-.tb-model { margin-left: auto; color: #4E4E4E; font-size: 11.5px; }
+.st-opt b { font-size: 13px; color: #C8C8C8; font-weight: 600; }
+.st-opt span { font-size: 11.5px; color: #666; line-height: 1.5; }
+.st-opt:hover:not(:disabled) { border-color: rgba(255,255,255,0.14); background: #1A1A1A; }
+.st-opt.active { border-color: rgba(91,141,239,0.5); background: rgba(91,141,239,0.07); }
+.st-opt.active b { color: #8FB3FF; }
+.st-opt:disabled { opacity: 0.4; cursor: not-allowed; }
+.st-ft { display: flex; justify-content: flex-end; gap: 8px; margin-top: 22px; }
+.st-btn {
+  padding: 8px 16px; border-radius: 7px; border: 1px solid rgba(255,255,255,0.08);
+  background: #181818; color: #999; font-size: 13px; cursor: pointer; font-family: inherit;
+  transition: all 0.15s;
+}
+.st-btn:hover { background: #222; color: #CCC; }
+.st-btn.primary {
+  background: linear-gradient(135deg, #5B8DEF, #6B7FEF); border: none;
+  color: #fff; font-weight: 550;
+}
+.st-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .chat-body {
   flex: 1; overflow-y: auto; padding: 18px 20px 10px;
@@ -1187,8 +1314,10 @@ function autoResize() {
     padding: 10px 14px; flex-shrink: 0;
     border-bottom: 1px solid rgba(255,255,255,0.04);
   }
-  .chat-toolbar { padding: 7px 14px; gap: 10px; }
-  .tb-model { display: none; }
+  .chat-toolbar { padding: 7px 14px; gap: 8px; }
+  .tb-current { font-size: 11.5px; }
+  .st-options { grid-template-columns: 1fr; }
+  .st-opt { padding: 10px 11px; }
   .chat-mobile-menu {
     background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.08);
     color: #AAA; width: 34px; height: 34px; border-radius: 8px;
