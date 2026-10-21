@@ -31,4 +31,12 @@ export default {
   getSession: (id) => api.get(`/chat/sessions/${id}`),
   saveSession: (id, messages) => api.put(`/chat/sessions/${id}`, { messages }),
   deleteSession: (id) => api.delete(`/chat/sessions/${id}`),
+  // 回收站（删除角色的完整备份）
+  listTrash: () => api.get('/trash'),
+  restoreTrash: (id, overwrite = false) => api.post(
+    `/trash/${encodeURIComponent(id)}/restore`,
+    null,
+    { params: overwrite ? { overwrite: true } : {} }
+  ),
+  purgeTrash: (id) => api.delete(`/trash/${encodeURIComponent(id)}`),
 }

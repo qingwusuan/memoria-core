@@ -1,14 +1,3 @@
----
-AIGC:
-    Label: "1"
-    ContentProducer: 001191440300708461136T1XGW3
-    ProduceID: 1d11071d6eca2a79359fe2319426a411_184b7144bc1e11f189c8525400393706
-    ReservedCode1: kVg6O5Z9oQUy6kFZTQw7Rt44imCwrihD4I869NtflrYZXRTAohFxdj2nf3EbsEGJCn08PXFLqSGG+1zuFzrNdc3haPJV1O5OpYRSIyraE9eELOGpS1ZZP9pz92B49Ojlg+kaNgjaTxwktsxHrLIRICfvgs16DDUc+sHztWP0QyZlIXa38vAtT95GYGI=
-    ContentPropagator: 001191440300708461136T1XGW3
-    PropagateID: 1d11071d6eca2a79359fe2319426a411_184b7144bc1e11f189c8525400393706
-    ReservedCode2: kVg6O5Z9oQUy6kFZTQw7Rt44imCwrihD4I869NtflrYZXRTAohFxdj2nf3EbsEGJCn08PXFLqSGG+1zuFzrNdc3haPJV1O5OpYRSIyraE9eELOGpS1ZZP9pz92B49Ojlg+kaNgjaTxwktsxHrLIRICfvgs16DDUc+sHztWP0QyZlIXa38vAtT95GYGI=
----
-
 # Memoria Core
 
 Memoria Core 是一个本地部署的 **AI 陪伴 / 角色扮演聊天应用**：由 FastAPI 提供后端服务，Vue 3 提供前端界面，ChromaDB + 中文向量模型（bge-small-zh-v1.5）为角色提供**长期记忆**。角色会记住你们之间发生过的事（关系里程碑、偏好、约定、亲密互动等），并通过一套 11 维双层性格引擎持续演化自己的"人格"。
@@ -43,8 +32,17 @@ Memoria Core 是一个本地部署的 **AI 陪伴 / 角色扮演聊天应用**�
   - 剧场模式（剧情走向、堕落点评、角色独白、弹幕剧场、显示好感度等 17 项）、系统调优（字数加强、对话加强、时间概念、虚构时间线等 9 项）、上帝视角（全篇总结、电影视角画面等 3 项），指令 payload 随消息提交并强制注入 prompt。
 - **对话会话管理**
   - 会话按角色持久化（`data/chat_logs/{角色}/`），支持列表 / 详情 / 改名 / 删除。
+- **上下文预算与滚动摘要**
+  - 近期对话按 token 预算截取（默认 6000），不再固定回灌 20 轮；
+  - 被挤出窗口的对话由 LLM 压成一段滚动摘要，按（角色, 会话）持久化到 `data/summaries/`，下一轮以【早前对话摘要】注入；
+  - 摘要是增量的：新增被挤出轮次达到 `SUMMARY_MIN_NEW_TURNS` 才重压一次，失败时沿用旧摘要、不阻断回复。
+- **混合检索排序**
+  - 记忆召回不再只看向量距离，按「语义相似度 × 重要性 × 时间新鲜度」加权重排（默认 0.6 / 0.25 / 0.15），三个月前的约定不会再被昨天的一句琐事挤掉。
 - **历史对话导入与场景锚定**
   - 支持粘贴文本或上传文件批量导入历史对话，自动按场景标记拆片、提取事件与片段；记录导入末尾场景，接续对话时自动锚定场景。
+- **角色回收站**
+  - 删除角色前自动整体备份（角色定义 / 性格 / 聊天 / 摘要 / 场景 / 记忆导出）；
+  - 角色管理页提供「回收站」入口：可查看备份内容与体积，一键整体恢复（记忆写回向量库），或彻底删除。目标角色已存在时需显式确认覆盖，不会静默覆盖。
 - **用户昵称**
   - 自定义被称呼的昵称（默认"用户"），叙事正文中严格使用该昵称指代用户。
 
@@ -200,8 +198,14 @@ npm run build
 | `EMBEDDING_DIM` | 否 | `512` | Embedding 输出维度 |
 | `CHROMA_COLLECTION` | 否 | `memoria_events` | ChromaDB 事件集合名前缀 |
 | `CHROMA_SIMILARITY_TOP_K` | 否 | `10` | 记忆检索召回数上限 |
-| `DEFAULT_DECAY_PER_DAY` | 否 | `0.02` | 记忆每日衰减系数 |
-| `MIN_IMPORTANCE_TO_KEEP` | 否 | `0.0` | 记忆保留最低重要性 |
+| `DEFAULT_DECAY_PER_DAY` | 否 | `0.02` | 记忆时间衰减系数（参与检索重排） |
+| `MIN_IMPORTANCE_TO_KEEP` | 否 | `0.0` | 记忆保留最低重要性（低于此值不进入召回） |
+| `MEMORY_WEIGHT_SIMILARITY` | 否 | `0.60` | 混合检索：语义相似度权重 |
+| `MEMORY_WEIGHT_IMPORTANCE` | 否 | `0.25` | 混合检索：重要性权重 |
+| `MEMORY_WEIGHT_RECENCY` | 否 | `0.15` | 混合检索：时间新鲜度权重 |
+| `HISTORY_TOKEN_BUDGET` | 否 | `6000` | 送入 LLM 的近期对话 token 预算 |
+| `SUMMARY_MIN_NEW_TURNS` | 否 | `4` | 新增多少条被挤出对话才重新压缩摘要 |
+| `SUMMARY_MAX_CHARS` | 否 | `900` | 滚动摘要最大长度 |
 | `MEMORIA_API_TARGET` | 否 | `http://localhost:8000` | 前端 Vite 代理目标（`vite.config.js` 读取） |
 | `MEMORIA_SERVE_STATIC` | 否 | — | 生产同源伺服开关（后端直接托管前端构建产物，无需跨域） |
 
@@ -222,14 +226,15 @@ GET /api/stats
 
 ```
 POST /api/chat
-请求体：{ message: string, history: [{role, content}], suggest_normal?: bool, suggest_naughty?: bool, instructions?: string[], action?: string }
+请求体：{ message: string, history: [{role, content}], suggest_normal?: bool, suggest_naughty?: bool, instructions?: string[], action?: string, session_id?: string }
 → { reply: string, personality_snapshot: { round_count, intimacy, top_gaps: [{dimension, surface, deep, gap}] } | null }
 ```
 
 - `history` 中 role 可取 `user` / `assistant` / `action`；
 - `suggest_normal` / `suggest_naughty` 控制回复末尾是否附带建议栏；
 - `instructions` 为指令中心选中的指令 payload，强制注入 prompt 执行；
-- `action` 表示用户要执行的"动作"（不当作说的话）。
+- `action` 表示用户要执行的"动作"（不当作说的话）；
+- `session_id` 用于按会话持久化滚动摘要，前端已自动携带；缺省时摘要落在 `default` 会话下。
 
 ### 记忆检索
 
@@ -293,6 +298,18 @@ DELETE /api/personas/{name}               # 删除角色（先备份到 data/tra
 POST   /api/personas/{name}/activate      # 切换当前活跃角色
 ```
 
+### 回收站
+
+```
+GET    /api/trash                         # 列出删除备份（角色名 / 时间 / 大小 / 包含部分）
+POST   /api/trash/{backup_id}/restore     # 整体恢复；?overwrite=true 才允许覆盖同名角色
+DELETE /api/trash/{backup_id}             # 彻底删除备份（不可恢复）
+```
+
+恢复是整体的：角色定义、性格状态、聊天记录、滚动摘要、场景锚点、记忆库
+（`memories.json` 回写 Chroma）一起还原；任一前置条件不满足时在写入前报错，
+不会留下半个角色。备份默认保留 7 天，之后在下次删除角色时自动清理。
+
 ### 用户资料
 
 ```
@@ -312,14 +329,27 @@ PUT /api/user/profile                     # 更新昵称 { nickname }
 | `data/personas/` | 角色定义（角色指南） |
 | `data/personalities/{角色}/state.json` | 每个角色的 11 维双层性格状态、了解度、敏感点表 |
 | `data/chat_logs/{角色}/` | 每个角色的对话会话记录（JSON） |
+| `data/summaries/{角色}/{会话}.json` | 滚动摘要：已压缩的早前剧情与覆盖进度（删除角色时连同备份一起清理） |
 | `data/last_scenes/` | 导入记录末尾场景锚点（供接续对话定位场景） |
 | `data/user_nickname.json` | 用户昵称（默认"用户"） |
 | `data/active_persona.json` | 当前活跃角色 |
-| `data/trash/` | 删除角色前的备份 |
+| `data/trash/` | 删除角色前的完整备份（角色定义 / 性格 / 聊天 / 摘要 / 场景 / 记忆导出），支持回收站整体恢复 |
 
 其他目录：
 - `prompts/event_extraction.txt`：事件提取提示词模板；
 - `logs/`、`backend/uvicorn_*.log`：运行日志（`.gitignore` 已排除）。
+
+---
+
+## 测试
+
+回归测试只依赖标准库，不触发网络与 LLM 调用：
+
+```powershell
+python -m unittest discover -s tests -t . -v
+```
+
+覆盖三块曾经出过问题的地方：角色设定重复注入、记忆混合排序（重要性/时间是否真的参与）、上下文预算切分与滚动摘要回退。
 
 ---
 
@@ -368,4 +398,8 @@ A：换端口启动即可，如 `uvicorn backend.main:app --port 8001`；若同�
 ## 说明
 
 本项目为个人 / 学习用途的本地应用，运行所需的 LLM API Key 与 Embedding 模型均需自行准备。文档中的功能与接口均以仓库代码实际实现为准。
-*（内容由AI生成，仅供参考）*
+
+## 许可证
+
+[PolyForm Noncommercial 1.0.0](./LICENSE)：允许个人学习、研究、兴趣项目与非营利组织使用，**不允许商业用途**。注意它**不是** OSI 认可的开源许可证；如果你需要允许商用的授权，请另行联系作者。
+

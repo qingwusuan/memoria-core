@@ -10,7 +10,6 @@ from datetime import datetime
 from typing import Callable, Optional
 
 from backend import config
-from backend.engines import memory
 from backend.engines.personality import PersonalityState, generate_injection
 
 
@@ -27,6 +26,8 @@ def build_prompt(
     instructions: Optional[list[str]] = None,
     user_nickname: str = "用户",
     action: str = "",
+    include_guide: bool = True,
+    early_summary: str = "",
 ) -> str:
     """
     组装完整的 system + 上下文 prompt。
@@ -40,16 +41,19 @@ def build_prompt(
         character_name: 角色名（用于时间感知描述）
         top_k_memories: 检索的事件记忆数量
         instructions: 指令中心选中的指令 payload 列表，原样注入 prompt 供模型执行
+        include_guide: system prompt 已含角色设定时置 False，避免同一份设定发两遍。
+        early_summary: 被挤出窗口的早前对话摘要（滚动摘要）。
 
     返回:
         完整的 prompt 字符串，可直接作为 LLM user 消息发送。
     """
     sections = []
 
-    # ── 1. 角色指南 ──
-    sections.append(f"【{character_name}设定】")
-    sections.append(character_guide)
-    sections.append("")
+    # ── 1. 角色指南（system prompt 已注入则跳过，避免重复发送）──
+    if include_guide:
+        sections.append(f"【{character_name}设定】")
+        sections.append(character_guide)
+        sections.append("")
 
     # ── 2. 指令中心（本次用户选中的指令，最高优先级执行）──
     if instructions:
@@ -74,12 +78,22 @@ def build_prompt(
             sections.append("")
 
     # ── 4. 相关事件记忆（仅注入语义摘要，不带原文引用，防止旧文风回流）──
+    # 延迟导入：memory 会拉起 chromadb / sentence-transformers，
+    # 放在函数内可以让 prompt 组装在无向量依赖时也能被单测。
+    from backend.engines import memory as memory_engine
+
     retrieval_query = _build_retrieval_query(current_message, recent_dialogue, scene_hint=scene_hint)
-    events = memory.search_memories(retrieval_query, top_k=top_k_memories, persona=persona)
+    events = memory_engine.search_memories(retrieval_query, top_k=top_k_memories, persona=persona)
     if events:
         sections.append("【相关记忆】")
         for ev in events:
             sections.append(f"- {ev['summary']}")
+        sections.append("")
+
+    # ── 5. 早前对话摘要（被预算挤出窗口的部分）──
+    if early_summary.strip():
+        sections.append("【早前对话摘要】")
+        sections.append(early_summary.strip())
         sections.append("")
 
     # ── 6. 近期对话 ──
@@ -245,6 +259,7 @@ def build_chat_messages(
     instructions: Optional[list[str]] = None,
     user_nickname: str = "用户",
     action: str = "",
+    early_summary: str = "",
 ) -> tuple[str, str]:
     """
     一次调用返回 (system_prompt, user_prompt)，可直接喂给 LLM。
@@ -292,6 +307,8 @@ def build_chat_messages(
         instructions=instructions,
         user_nickname=user_nickname,
         action=action,
+        include_guide=False,  # 设定已在 system prompt 中，避免重复注入
+        early_summary=early_summary,
     )
     return system, user
 

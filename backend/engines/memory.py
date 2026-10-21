@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import os
 import re
 import sys
@@ -18,6 +19,7 @@ from chromadb.config import Settings as ChromaSettings
 from sentence_transformers import SentenceTransformer
 
 from backend import config
+from backend.engines.memory_score import hybrid_score, recency_score, similarity_from_distance
 from backend.llm.deepseek import chat as llm_chat
 
 # ── 全局单例 ──
@@ -464,28 +466,53 @@ def store_chat_events_from_dialogue(
     return ids
 
 
-def search_memories(query: str, top_k: int = 5, persona: str = "default") -> list[dict]:
-    """语义检索事件记忆，返回摘要 + 重要度 + 原文引用。"""
-    _, ev_coll, _, _ = _get_chroma(persona)
-    results = ev_coll.query(query_texts=[query], n_results=top_k)
-    items = []
-    if results["ids"] and results["ids"][0]:
-        for i, mid in enumerate(results["ids"][0]):
-            meta = results["metadatas"][0][i]
-            quotes_raw = meta.get("quotes", "[]")
-            try:
-                quotes = json.loads(quotes_raw) if isinstance(quotes_raw, str) else quotes_raw
-            except json.JSONDecodeError:
-                quotes = []
+def search_memories(query: str, top_k: int = 5, persona: str = "default",
+                    min_importance: Optional[float] = None) -> list[dict]:
+    """混合检索事件记忆：语义相似度 + 重要性 + 时间新鲜度加权排序。
 
-            items.append({
-                "id": mid,
-                "summary": results["documents"][0][i],
-                "importance": meta.get("importance", 0.5),
-                "distance": results["distances"][0][i] if results.get("distances") else 0.0,
-                "quotes": quotes,
-            })
-    return items
+    纯向量 top-k 有两个老问题：
+      1. 入库时辛苦打的重要性分数从没参与排序，里程碑和寒暄同权；
+      2. 昨天的琐事永远排在三个月前的约定前面。
+    这里先多召回（candidate_k），再用 config 里的三项权重重排，最后截 top_k。
+    """
+    _, ev_coll, _, _ = _get_chroma(persona)
+    candidate_k = max(top_k * 3, config.CHROMA_SIMILARITY_TOP_K)
+    results = ev_coll.query(query_texts=[query], n_results=candidate_k)
+    if not results["ids"] or not results["ids"][0]:
+        return []
+
+    floor = config.MIN_IMPORTANCE_TO_KEEP if min_importance is None else min_importance
+    now = time.time()
+    items = []
+    for i, mid in enumerate(results["ids"][0]):
+        meta = results["metadatas"][0][i] or {}
+        imp = float(meta.get("importance", 0.5))
+        if imp < floor:
+            continue
+        quotes_raw = meta.get("quotes", "[]")
+        try:
+            quotes = json.loads(quotes_raw) if isinstance(quotes_raw, str) else quotes_raw
+        except json.JSONDecodeError:
+            quotes = []
+
+        distance = results["distances"][0][i] if results.get("distances") else 0.0
+        similarity = similarity_from_distance(distance)
+        recency = recency_score(meta.get("ts"), now=now)
+        score = hybrid_score(similarity, imp, recency)
+
+        items.append({
+            "id": mid,
+            "summary": results["documents"][0][i],
+            "importance": imp,
+            "distance": distance,
+            "similarity": similarity,
+            "recency": recency,
+            "score": score,
+            "quotes": quotes,
+        })
+
+    items.sort(key=lambda x: x["score"], reverse=True)
+    return items[:top_k]
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -636,6 +663,37 @@ def get_collection_stats(persona: str = "default") -> dict:
         "embedding_model": config.EMBEDDING_MODEL,
         "dim": model.get_embedding_dimension() if model else config.EMBEDDING_DIM,
     }
+
+
+def restore_memories(persona: str, export: dict) -> dict:
+    """把 `memories.json` 导出快照写回 Chroma（回收站恢复用）。
+
+    用 upsert 而不是 add：同一个 id 重复恢复不会产生重复记忆。
+    """
+    _, ev_coll, sn_coll, _ = _get_chroma(persona)
+    stats = {"events": 0, "snippets": 0, "error": None}
+
+    for key, coll in (("events", ev_coll), ("snippets", sn_coll)):
+        rows = (export or {}).get(key) or []
+        ids, documents, metadatas = [], [], []
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            rid = row.get("id")
+            doc = row.get("document")
+            if not rid or doc is None:
+                continue
+            meta = row.get("metadata") or {}
+            if not isinstance(meta, dict):
+                meta = {}
+            ids.append(str(rid))
+            documents.append(str(doc))
+            metadatas.append(meta)
+        if ids:
+            coll.upsert(ids=ids, documents=documents, metadatas=metadatas)
+            stats[key] = len(ids)
+
+    return stats
 
 
 def wipe_memories(persona: str = "default"):

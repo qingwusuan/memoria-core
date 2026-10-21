@@ -481,6 +481,7 @@ async function regenerateAfterEdit(userIdx) {
     const r = await api.chat(lastMsg.content, history, {
       suggest_normal: suggestNormal.value,
       suggest_naughty: suggestNaughty.value,
+      session_id: sessionId.value || '',
     }, { signal: abortController.signal })
     messages.value.push({ role: 'assistant', content: r.data.reply })
     persistSession()
@@ -601,6 +602,7 @@ async function send() {
       suggest_normal: suggestNormal.value,
       suggest_naughty: suggestNaughty.value,
       instructions: cmdPayloads,
+      session_id: sessionId.value || '',
     }, { signal: abortController.signal })
     messages.value.push({ role: 'assistant', content: r.data.reply })
     persistSession()
@@ -631,6 +633,7 @@ async function regenerate(i) {
     const r = await api.chat(lastMsg.content, history, {
       suggest_normal: suggestNormal.value,
       suggest_naughty: suggestNaughty.value,
+      session_id: sessionId.value || '',
     }, { signal: abortController.signal })
     messages.value.push({ role: 'assistant', content: r.data.reply })
     persistSession()
