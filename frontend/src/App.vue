@@ -14,6 +14,13 @@
       </nav>
 
       <div class="sb-footer">
+        <button class="sb-settings" @click="showSettings = true">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+            <circle cx="12" cy="12" r="3"/>
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+          </svg>
+          设置
+        </button>
         <div class="sb-divider"></div>
         <div class="sb-stats">
           <div class="stat-block">
@@ -36,6 +43,8 @@
         </transition>
       </router-view>
     </main>
+
+    <SettingsModal v-model="showSettings" @saved="refreshStats" />
   </div>
 </template>
 
@@ -43,9 +52,15 @@
 import { ref, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import api from './api.js'
+import SettingsModal from './components/SettingsModal.vue'
 
 const router = useRouter()
 const stats = ref(null)
+const showSettings = ref(false)
+
+async function refreshStats() {
+  try { const r = await api.getStats(); stats.value = r.data } catch {}
+}
 
 const navRoutes = computed(() =>
   router.options.routes.filter(r => r.meta?.label)
@@ -58,9 +73,7 @@ const icons = {
   radar: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><polygon points="12 2 22 8.5 22 15.5 12 22 2 15.5 2 8.5"/><line x1="12" y1="22" x2="12" y2="2"/><line x1="2" y1="8.5" x2="22" y2="15.5"/></svg>',
 }
 
-onMounted(async () => {
-  try { const r = await api.getStats(); stats.value = r.data } catch {}
-})
+onMounted(refreshStats)
 </script>
 
 <style>
@@ -113,6 +126,14 @@ body {
 .sb-link.router-link-exact-active .sb-icon { opacity: 0.9; }
 
 .sb-footer { padding: 10px 10px 0; }
+.sb-settings {
+  display: flex; align-items: center; gap: 8px; width: 100%;
+  padding: 8px 10px; margin-bottom: 8px;
+  background: transparent; border: none; border-radius: 7px;
+  color: #888; font-size: 13px; cursor: pointer; font-family: inherit;
+  transition: all 0.15s;
+}
+.sb-settings:hover { background: rgba(255,255,255,0.03); color: #CCC; }
 .sb-divider { height: 1px; background: rgba(255,255,255,0.04); margin-bottom: 12px; }
 .sb-stats { display: flex; gap: 22px; margin-bottom: 10px; }
 .stat-block { display: flex; flex-direction: column; gap: 1px; }

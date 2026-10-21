@@ -247,6 +247,7 @@ class IngestRequest(BaseModel):
 class PersonaRequest(BaseModel):
     name: str
     guide: str  # 角色指南全文
+    narrative_person: str = ""  # first / third；留空 = 跟随全局默认
 
 
 class SensitivePointRequest(BaseModel):
@@ -261,6 +262,7 @@ class PersonaResponse(BaseModel):
     name: str
     guide: str
     is_active: bool
+    narrative_person: str = ""
 
 
 class ProfileRequest(BaseModel):
@@ -339,7 +341,8 @@ async def chat(req: ChatRequest, background_tasks: BackgroundTasks):
 
     # 用户昵称：读取自定义昵称（默认「用户」），注入 prompt 让模型在叙事中用昵称称呼用户
     user_nickname = load_user_nickname()
-    narrative_person = req.narrative_person or runtime_settings.get("narrative_person") or "third"
+    persona_view = (persona.get("narrative_person") or "") if persona else ""
+    narrative_person = req.narrative_person or persona_view or runtime_settings.get("narrative_person") or "third"
     # 接续对话（带"(接续对话)"前缀 或 全新会话无 history）时，加载导入记录末尾场景作为检索锚点，
     # 避免短句检索把记忆拉向泛化场景导致回复场景偏离。
     scene_hint = ""
@@ -397,7 +400,8 @@ async def chat_stream(req: ChatRequest):
     guide = persona.get("guide", "") if persona else ""
     char_name = persona.get("name", "角色") if persona else "角色"
     user_nickname = load_user_nickname()
-    narrative_person = req.narrative_person or runtime_settings.get("narrative_person") or "third"
+    persona_view = (persona.get("narrative_person") or "") if persona else ""
+    narrative_person = req.narrative_person or persona_view or runtime_settings.get("narrative_person") or "third"
     scene_hint = ""
     if prompt_builder._is_continuation_message(req.message) or not req.history:
         scene_hint = memory.load_last_scene(_current_persona_name)
@@ -875,12 +879,25 @@ def load_persona(name: str) -> dict | None:
     return json.loads(file.read_text("utf-8"))
 
 
-def save_persona(name: str, guide: str):
+def _validate_person_view(value: str) -> str:
+    """校验角色级叙事视角：空 = 跟随全局，否则 first / third。"""
+    v = (value or "").strip()
+    if v and v not in ("first", "third"):
+        raise HTTPException(400, "叙事视角只能是 first / third，或留空跟随默认")
+    return v
+
+
+def save_persona(name: str, guide: str, narrative_person: str = ""):
     """保存角色到磁盘；name 非法时抛 400，防止路径穿越写入目录外。"""
     _safe_persona_name(name)
     PERSONAS_DIR.mkdir(parents=True, exist_ok=True)
     file = PERSONAS_DIR / f"{name}.json"
-    data = {"name": name, "guide": guide, "updated_at": time.time()}
+    data = {
+        "name": name,
+        "guide": guide,
+        "narrative_person": _validate_person_view(narrative_person),
+        "updated_at": time.time(),
+    }
     file.write_text(json.dumps(data, ensure_ascii=False, indent=2), "utf-8")
 
 
@@ -900,6 +917,7 @@ def list_personas():
                 name=p.get("name", name),
                 guide=p.get("guide", ""),
                 is_active=(name == _current_persona_name),
+                narrative_person=p.get("narrative_person", ""),
             ))
     return result
 
@@ -913,6 +931,7 @@ def get_persona(name: str):
         name=p.get("name", name),
         guide=p.get("guide", ""),
         is_active=(name == _current_persona_name),
+        narrative_person=p.get("narrative_person", ""),
     )
 
 
@@ -921,8 +940,11 @@ def create_persona(req: PersonaRequest):
     _safe_persona_name(req.name)
     if load_persona(req.name):
         raise HTTPException(409, f"角色 '{req.name}' 已存在")
-    save_persona(req.name, req.guide)
-    return PersonaResponse(name=req.name, guide=req.guide, is_active=False)
+    save_persona(req.name, req.guide, req.narrative_person)
+    return PersonaResponse(
+        name=req.name, guide=req.guide, is_active=False,
+        narrative_person=_validate_person_view(req.narrative_person),
+    )
 
 
 @app.put("/api/personas/{name}", response_model=PersonaResponse)
@@ -931,7 +953,7 @@ def update_persona(name: str, req: PersonaRequest):
     _safe_persona_name(req.name)  # 请求体（新名，改名场景）
     if not load_persona(name):
         raise HTTPException(404, f"角色 '{name}' 不存在")
-    save_persona(req.name, req.guide)
+    save_persona(req.name, req.guide, req.narrative_person)
     # 如果改名，清理旧文件
     if req.name != name:
         old_file = PERSONAS_DIR / f"{name}.json"
@@ -940,6 +962,7 @@ def update_persona(name: str, req: PersonaRequest):
     return PersonaResponse(
         name=req.name, guide=req.guide,
         is_active=(req.name == _current_persona_name),
+        narrative_person=_validate_person_view(req.narrative_person),
     )
 
 

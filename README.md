@@ -273,6 +273,9 @@ PUT /api/settings
 `provider` 只允许切换到已配置 Key 的供应商，否则 400；`narrative_person`
 只接受 `first` / `third`。设置写入 `data/settings.json`，与环境变量分离。
 
+视角优先级：请求体 `narrative_person` > 角色自己的 `narrative_person`
+> 全局默认（`/api/settings`）> `third`。角色级视角在「角色管理 → 详情」里设置。
+
 ### 记忆检索
 
 ```
@@ -329,8 +332,8 @@ POST /api/dialogue/upload                 # 上传对话文件批量导入
 ```
 GET    /api/personas                      → [{ name, guide, is_active }]
 GET    /api/personas/{name}               → { name, guide, is_active }
-POST   /api/personas                      # 新建角色 { name, guide }
-PUT    /api/personas/{name}               # 更新角色指南
+POST   /api/personas                      # 新建角色 { name, guide, narrative_person? }
+PUT    /api/personas/{name}               # 更新角色指南 / 视角
 DELETE /api/personas/{name}               # 删除角色（先备份到 data/trash）
 POST   /api/personas/{name}/activate      # 切换当前活跃角色
 ```

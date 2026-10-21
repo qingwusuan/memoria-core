@@ -69,6 +69,15 @@
         <div class="ds-edit" v-else>
           <textarea v-model="editText" rows="14"></textarea>
         </div>
+        <div class="ds-view">
+          <label>叙事视角</label>
+          <select :value="detail.narrative_person || ''" @change="setPersonaView($event.target.value)">
+            <option value="">跟随默认</option>
+            <option value="third">第三人称</option>
+            <option value="first">第一人称</option>
+          </select>
+          <span class="ds-view-hint">只影响这个角色，保存后立即生效。</span>
+        </div>
         <div class="ds-actions">
           <button class="btn" v-if="!detail.isActive && !detail.is_active" @click="activate">启用此角色</button>
           <button class="btn" @click="toggleEdit">{{ editing ? '保存' : '编辑' }}</button>
@@ -192,6 +201,16 @@ async function toggleEdit() {
   } else {
     editText.value = detail.value.guide
     editing.value = true
+  }
+}
+async function setPersonaView(value) {
+  const name = detail.value.name
+  try {
+    await api.updatePersona(name, detail.value.guide, value)
+    await load()
+    detail.value = personas.value.find(p => p.name === name) || null
+  } catch (e) {
+    alert('保存叙事视角失败：' + (e.response?.data?.detail || e.message))
   }
 }
 async function remove() {
@@ -415,8 +434,20 @@ onMounted(() => { load(); loadTrash(true) })
 .btn-danger:hover { background: rgba(224,80,80,0.12); border-color: rgba(224,80,80,0.3); color: #D06060; }
 .btn:disabled { opacity: 0.3; cursor: not-allowed; }
 
-/* ────────── 回收站 ────────── */
-.hd-actions { display: flex; align-items: center; gap: 8px; }
+/* 角色级叙事视角 */
+.ds-view {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding: 12px 24px; border-top: 1px solid rgba(255,255,255,0.04);
+  font-size: 12.5px; color: #757575;
+}
+.ds-view select {
+  background: #0B0B0B; color: #BBB; border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 6px; padding: 4px 8px; font-size: 12.5px; font-family: inherit;
+  outline: none;
+}
+.ds-view-hint { color: #4E4E4E; font-size: 11.5px; }
+
+/* ────────── 回收站 ────────── */.hd-actions { display: flex; align-items: center; gap: 8px; }
 .trash-count {
   min-width: 17px; height: 17px; padding: 0 5px; margin-left: 2px;
   border-radius: 9px; background: rgba(91,141,239,0.18); color: #7FA6F5;
