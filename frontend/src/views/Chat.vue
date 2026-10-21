@@ -209,7 +209,7 @@
 </template>
 
 <script setup>
-import { ref, computed, nextTick, onMounted, onUnmounted, watch } from 'vue'
+import { ref, reactive, computed, nextTick, onMounted, onUnmounted, watch } from 'vue'
 import api from '../api.js'
 import { instructCats, instructs } from '../instructs.js'
 
@@ -466,6 +466,79 @@ function commitEdit(i) {
 }
 
 // 编辑消息后自动重新生成 AI 回复
+// ──────────── 流式回复 ────────────
+// 把 SSE 增量写进一条可响应的 assistant 消息；后端不支持流式时自动退回一次性接口。
+async function streamReply(message, history, options) {
+  const msg = reactive({ role: 'assistant', content: '' })
+  messages.value.push(msg)
+
+  let resp
+  try {
+    resp = await api.chatStream(message, history, options, { signal: abortController.signal })
+  } catch (e) {
+    messages.value.pop()
+    throw e
+  }
+
+  // 老后端没有 /api/chat/stream：退回一次性接口，行为与之前一致
+  if (!resp.ok || !resp.body) {
+    const r = await api.chat(message, history, options, { signal: abortController.signal })
+    msg.content = r.data.reply
+    return msg
+  }
+
+  const reader = resp.body.getReader()
+  const decoder = new TextDecoder('utf-8')
+  let buf = ''
+
+  const handleBlock = (block) => {
+    let event = 'message'
+    let data = ''
+    for (const line of block.split('\n')) {
+      if (line.startsWith('event:')) event = line.slice(6).trim()
+      else if (line.startsWith('data:')) data += line.slice(5).trim()
+    }
+    if (!data) return
+    const payload = JSON.parse(data)
+    if (event === 'delta') msg.content += payload.text || ''
+    else if (event === 'error') throw new Error(payload.message || '生成失败')
+  }
+
+  try {
+    for (;;) {
+      const { value, done } = await reader.read()
+      if (done) break
+      buf += decoder.decode(value, { stream: true })
+      let idx
+      while ((idx = buf.indexOf('\n\n')) >= 0) {
+        handleBlock(buf.slice(0, idx))
+        buf = buf.slice(idx + 2)
+      }
+      scrollToBottom()
+    }
+  } finally {
+    try { reader.releaseLock() } catch { /* 已释放 */ }
+  }
+
+  if (!msg.content.trim()) throw new Error('LLM 返回空回复')
+  return msg
+}
+
+function isAborted(e) {
+  return e?.name === 'AbortError' || e?.code === 'ERR_CANCELED' || e?.name === 'CanceledError'
+}
+
+// 流式中途失败：保留已收到的正文，只在末尾标注中断，不整条丢弃
+function markStreamFailure() {
+  const last = messages.value[messages.value.length - 1]
+  if (last && last.role === 'assistant') {
+    if (!last.content.trim()) last.content = '（请求失败，请检查后端是否运行）'
+    else last.content += '\n\n（生成中断）'
+    return
+  }
+  messages.value.push({ role: 'assistant', content: '（请求失败，请检查后端是否运行）' })
+}
+
 async function regenerateAfterEdit(userIdx) {
   if (loading.value) return
   const lastMsg = messages.value[userIdx]
@@ -478,16 +551,15 @@ async function regenerateAfterEdit(userIdx) {
       if (m.role === 'system') continue
       history.push({ role: m.role, content: m.content })
     }
-    const r = await api.chat(lastMsg.content, history, {
+    await streamReply(lastMsg.content, history, {
       suggest_normal: suggestNormal.value,
       suggest_naughty: suggestNaughty.value,
       session_id: sessionId.value || '',
-    }, { signal: abortController.signal })
-    messages.value.push({ role: 'assistant', content: r.data.reply })
+    })
     persistSession()
   } catch (e) {
-    if (e?.code === 'ERR_CANCELED' || e?.name === 'CanceledError') return
-    messages.value.push({ role: 'assistant', content: '（请求失败，请检查后端是否运行）' })
+    if (isAborted(e)) return
+    markStreamFailure()
   } finally {
     loading.value = false
   }
@@ -598,17 +670,16 @@ async function send() {
       // 兼容旧数据：历史中遗留的 role=action 消息按普通用户消息回灌，避免割裂
       history.push({ role: m.role === 'action' ? 'user' : m.role, content: m.content })
     }
-    const r = await api.chat(raw, history, {
+    await streamReply(raw, history, {
       suggest_normal: suggestNormal.value,
       suggest_naughty: suggestNaughty.value,
       instructions: cmdPayloads,
       session_id: sessionId.value || '',
-    }, { signal: abortController.signal })
-    messages.value.push({ role: 'assistant', content: r.data.reply })
+    })
     persistSession()
   } catch (e) {
-    if (e?.code === 'ERR_CANCELED' || e?.name === 'CanceledError') return
-    messages.value.push({ role: 'assistant', content: '（请求失败，请检查后端是否运行）' })
+    if (isAborted(e)) return
+    markStreamFailure()
   } finally {
     loading.value = false
     nextTick(() => { inputRef.value?.focus() })
@@ -630,16 +701,15 @@ async function regenerate(i) {
       history.push({ role: m.role, content: m.content })
     }
     const lastMsg = messages.value[messages.value.length - 1]
-    const r = await api.chat(lastMsg.content, history, {
+    await streamReply(lastMsg.content, history, {
       suggest_normal: suggestNormal.value,
       suggest_naughty: suggestNaughty.value,
       session_id: sessionId.value || '',
-    }, { signal: abortController.signal })
-    messages.value.push({ role: 'assistant', content: r.data.reply })
+    })
     persistSession()
   } catch (e) {
-    if (e?.code === 'ERR_CANCELED' || e?.name === 'CanceledError') return
-    messages.value.push({ role: 'assistant', content: '（请求失败，请检查后端是否运行）' })
+    if (isAborted(e)) return
+    markStreamFailure()
   } finally {
     loading.value = false
   }

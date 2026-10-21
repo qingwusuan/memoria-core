@@ -121,3 +121,64 @@ def chat(prompt: str, system: str = "", temperature: float = 0.3, max_tokens: in
         raise last_err
     finally:
         lock.release()
+
+
+def stream_chat(prompt: str, system: str = "", temperature: float = 0.3,
+                max_tokens: int = 5000, background: bool = False):
+    """流式对话：逐段 yield 文本增量。
+
+    与 chat() 共享同一把主/后台锁——流没结束前锁不释放，避免与并发请求
+    在同一账号上撞 429。空流（一个 token 都没有）会提高温度重试，
+    与 chat() 的空回复兜底保持一致；已经吐出内容后再出错则直接抛出，
+    由调用方决定是否保留半截回复。
+    """
+    messages = []
+    if system:
+        messages.append({"role": "system", "content": system})
+    messages.append({"role": "user", "content": prompt})
+
+    provider = config.LLM_PROVIDER
+    model = config.KIMI_MODEL if provider == "kimi" else config.LLM_MODEL
+    if provider == "kimi":
+        temperature = 1.0
+
+    client = get_client()
+    lock = _background_lock if background else _main_lock
+    lock_name = "background" if background else "main"
+    _acquire_llm_lock(lock, lock_name)
+    last_err = None
+    try:
+        for attempt in range(5):
+            emitted = False
+            try:
+                stream = client.chat.completions.create(
+                    model=model,
+                    messages=messages,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                    stream=True,
+                )
+                for chunk in stream:
+                    choices = getattr(chunk, "choices", None) or []
+                    if not choices:
+                        continue
+                    delta = getattr(choices[0], "delta", None)
+                    text = getattr(delta, "content", None) if delta is not None else None
+                    if text:
+                        emitted = True
+                        yield text
+                if emitted:
+                    return
+                last_err = ValueError("LLM 流式返回空内容")
+                _time.sleep(2.0 * (attempt + 1))
+                temperature = 1.0 if provider == "kimi" else (1.0 if attempt >= 3 else 0.9)
+            except Exception as e:
+                err_str = str(e)
+                if not emitted and ("429" in err_str or "rate_limit" in err_str.lower()):
+                    last_err = e
+                    _time.sleep(2.5 * (attempt + 1))
+                    continue
+                raise
+        raise last_err
+    finally:
+        lock.release()

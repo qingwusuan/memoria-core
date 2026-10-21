@@ -111,3 +111,24 @@ class ResponderAgent(Agent):
                 reply = body + "\n\n" + extra_body + ("\n\n" + suggest if suggest else "")
 
         return reply
+
+    def stream(self, **ctx):
+        """流式生成主回复，逐段 yield 文本增量。
+
+        与 run() 的差别：不做「字数加强」续写兜底（那需要先拿到完整正文）。
+        空流仍视为失败，抛错交给上层处理。
+        """
+        from backend.llm.deepseek import stream_chat
+
+        system_prompt, user_prompt = self.build_prompts(**ctx)
+        produced = False
+        for delta in stream_chat(
+            user_prompt,
+            system=system_prompt,
+            temperature=self.temperature,
+            max_tokens=self.max_tokens,
+        ):
+            produced = True
+            yield delta
+        if not produced:
+            raise RuntimeError("LLM 返回空回复")

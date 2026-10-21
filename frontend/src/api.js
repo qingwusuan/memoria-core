@@ -5,6 +5,13 @@ const api = axios.create({ baseURL: '/api', timeout: 30000 })
 export default {
   getStats: () => api.get('/stats'),
   chat: (message, history, options = {}, config = {}) => api.post('/chat', { message, history, ...options }, { timeout: 300000, ...config }),
+  // 流式对话：返回未解析的 fetch Response（SSE），由调用方逐段读取
+  chatStream: (message, history, options = {}, config = {}) => fetch('/api/chat/stream', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ message, history, ...options }),
+    ...config,
+  }),
   ingestDialogue: (dialogue, runPersonality = false) =>
     api.post('/dialogue/ingest', { dialogue, run_personality: runPersonality }),
   uploadDialogue: (formData) => api.post('/dialogue/upload', formData, {
