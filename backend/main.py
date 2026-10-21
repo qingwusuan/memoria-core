@@ -239,6 +239,11 @@ class SettingsRequest(BaseModel):
     narrative_person: str | None = None
 
 
+class ApiKeyRequest(BaseModel):
+    provider: str
+    key: str = ""
+
+
 class IngestRequest(BaseModel):
     dialogue: str
     run_personality: bool = False
@@ -281,7 +286,7 @@ def get_settings():
 
 @app.put("/api/settings")
 def update_settings(req: SettingsRequest):
-    """修改供应商或叙事视角；非法值直接 400，不写盘。"""
+    """修改供应商或默认叙事视角；非法值直接 400，不写盘。"""
     patch = {}
     if req.provider is not None:
         patch["provider"] = req.provider
@@ -292,6 +297,25 @@ def update_settings(req: SettingsRequest):
     except ValueError as e:
         raise HTTPException(400, str(e))
     return runtime_settings.public_view()
+
+
+@app.put("/api/settings/keys")
+def set_api_key(req: ApiKeyRequest):
+    """导入 / 更新 / 清除某家供应商的 API Key（空字符串 = 清除）。
+
+    Key 存在 `data/credentials.json`，不改 `.env`；返回只带掩码，不回传明文。
+    """
+    try:
+        configured = runtime_settings.set_key(req.provider, req.key)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    return {
+        "status": "ok",
+        "provider": req.provider,
+        "configured": configured,
+        "masked": runtime_settings.mask_key(runtime_settings.get_key(req.provider)),
+        "settings": runtime_settings.public_view(),
+    }
 
 
 @app.get("/api/stats")

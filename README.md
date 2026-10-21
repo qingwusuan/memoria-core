@@ -40,10 +40,10 @@ Memoria Core 是一个本地部署的 **AI 陪伴 / 角色扮演聊天应用**�
   - 记忆召回不再只看向量距离，按「语义相似度 × 重要性 × 时间新鲜度」加权重排（默认 0.6 / 0.25 / 0.15），三个月前的约定不会再被昨天的一句琐事挤掉。
 - **历史对话导入与场景锚定**
   - 支持粘贴文本或上传文件批量导入历史对话，自动按场景标记拆片、提取事件与片段；记录导入末尾场景，接续对话时自动锚定场景。
-- **运行时设置（可随时切换）**
-  - 叙事视角：第三人称（小说体）↔ 第一人称（角色以「我」说话），聊天页顶部工具栏直接切换，立即生效；
-  - 模型供应商：DeepSeek / Kimi 下拉选择，只列出已配置 Key 的供应商，切换后下一次请求即用新模型；
-  - 设置持久化在 `data/settings.json`，不改 `.env`；`.env` 只作为默认值与兜底。
+- **设置只放凭据**
+  - 侧边栏「设置」只做 API Key 导入：按供应商保存 / 替换 / 清除，只回显掩码（`sk-…abcd`），不写 `.env`；
+  - 模型供应商在对话页顶部选择（运行时选择，不是设置）；叙事视角在角色详情里按角色设置；
+  - 偏好持久化在 `data/settings.json`，Key 在 `data/credentials.json`，`.env` 只做默认值与兜底。
 - **流式输出**
   - 回复通过 SSE（`/api/chat/stream`）边生成边渲染，首字延迟从“整段生成完”降到 1 秒级；可随时中断，已收到的正文保留；
   - 后端不支持流式时前端自动退回一次性接口，行为与旧版一致。
@@ -276,6 +276,19 @@ PUT /api/settings
 视角优先级：请求体 `narrative_person` > 角色自己的 `narrative_person`
 > 全局默认（`/api/settings`）> `third`。角色级视角在「角色管理 → 详情」里设置。
 
+### API Key 导入
+
+```
+PUT /api/settings/keys
+请求体：{ provider: "deepseek"|"kimi", key: string }   # key 为空字符串 = 清除
+→ { status, provider, configured, masked, settings }
+```
+
+Key 保存在 `data/credentials.json`（本机明文，仅本机使用），**不会写入 `.env`**，
+也不会回传明文——接口只返回 `sk-…abcd` 形式的掩码。导入后优先于环境变量；
+清除后自动回落到 `DEEPSEEK_API_KEY` / `KIMI_API_KEY`。设置页只负责这件事，
+「用哪家」是对话页顶部的运行时选择。
+
 ### 记忆检索
 
 ```
@@ -370,6 +383,8 @@ PUT /api/user/profile                     # 更新昵称 { nickname }
 | `data/personalities/{角色}/state.json` | 每个角色的 11 维双层性格状态、了解度、敏感点表 |
 | `data/chat_logs/{角色}/` | 每个角色的对话会话记录（JSON） |
 | `data/summaries/{角色}/{会话}.json` | 滚动摘要：已压缩的早前剧情与覆盖进度（删除角色时连同备份一起清理） |
+| `data/settings.json` | 运行时偏好：当前供应商、默认叙事视角 |
+| `data/credentials.json` | 设置页导入的 API Key（本机明文，不进版本库） |
 | `data/last_scenes/` | 导入记录末尾场景锚点（供接续对话定位场景） |
 | `data/user_nickname.json` | 用户昵称（默认"用户"） |
 | `data/active_persona.json` | 当前活跃角色 |

@@ -34,6 +34,19 @@
 
     <!-- 右侧聊天区 -->
     <div class="chat-main">
+      <div class="chat-toolbar" v-if="providers.length">
+        <label class="tb-item">
+          <span class="tb-label">模型</span>
+          <select v-model="provider" @change="changeProvider" :disabled="switching">
+            <option
+              v-for="p in providers" :key="p.id" :value="p.id" :disabled="!p.has_key"
+            >
+              {{ p.label }} · {{ p.model }}{{ p.has_key ? '' : '（未配置 Key）' }}
+            </option>
+          </select>
+        </label>
+        <span class="tb-model" v-if="!providers.some(p => p.has_key)">去侧边栏「设置」导入 API Key</span>
+      </div>
       <div class="chat-body" ref="bodyRef">
         <div v-if="!messages.length && !loading" class="chat-empty">
           发送第一条消息，或点击 + 上传对话记录文件。
@@ -316,12 +329,40 @@ async function saveNick() {
 const sessionId = ref(null)
 const sessions = ref([])
 
+// 运行时模型选择（用户级偏好，入口在对话页顶部）
+const provider = ref('')
+const providers = ref([])
+const switching = ref(false)
+
+async function loadSettings() {
+  try {
+    const r = await api.getSettings()
+    provider.value = r.data.provider || ''
+    providers.value = r.data.providers || []
+  } catch {
+    providers.value = [] // 旧后端没有该接口：不显示工具栏
+  }
+}
+
+async function changeProvider() {
+  switching.value = true
+  try {
+    await api.updateSettings({ provider: provider.value })
+  } catch (e) {
+    alert('切换模型失败：' + (e.response?.data?.detail || e.message))
+    await loadSettings()
+  } finally {
+    switching.value = false
+  }
+}
+
 onMounted(async () => {
   try {
     const r = await api.getStats()
     activePersona.value = r.data?.active_persona || ''
   } catch {}
   await loadNickname()
+  await loadSettings()
   await loadSessions()
   // 自动打开最近一次会话
   if (sessions.value.length) {
@@ -781,6 +822,22 @@ function autoResize() {
 .chat-main {
   flex: 1; display: flex; flex-direction: column; min-width: 0;
 }
+
+/* 模型选择条 */
+.chat-toolbar {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding: 7px 20px; border-bottom: 1px solid rgba(255,255,255,0.05);
+  font-size: 12px; color: #6E6E6E;
+}
+.tb-item { display: inline-flex; align-items: center; gap: 6px; }
+.tb-label { color: #666; }
+.chat-toolbar select {
+  background: #141414; color: #BBB; border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 6px; padding: 3px 7px; font-size: 12px; outline: none;
+  font-family: inherit;
+}
+.chat-toolbar select:disabled { opacity: 0.5; }
+.tb-model { margin-left: auto; color: #8A6A4A; font-size: 11.5px; }
 
 /* 消息行 */
 .msg { }

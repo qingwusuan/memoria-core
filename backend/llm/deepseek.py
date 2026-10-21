@@ -57,10 +57,10 @@ def get_client() -> OpenAI:
 
     if _client is None or _provider_loaded != provider:
         if provider == "kimi":
-            api_key = config.KIMI_API_KEY
+            api_key = runtime_settings.get_key("kimi")
             base_url = config.KIMI_BASE_URL
         else:  # deepseek (default)
-            api_key = config.LLM_API_KEY
+            api_key = runtime_settings.get_key("deepseek")
             base_url = config.LLM_BASE_URL
 
         _client = OpenAI(api_key=api_key, base_url=base_url)

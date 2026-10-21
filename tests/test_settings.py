@@ -62,6 +62,35 @@ class SettingsTest(unittest.TestCase):
         self.assertEqual(view["model"], "deepseek-v4-flash")
         self.assertTrue(all(p["has_key"] for p in view["providers"]))
 
+    def test_imported_key_overrides_env_and_is_masked(self):
+        settings.set_key("kimi", "sk-kimi-1234567890abcd")
+        self.assertTrue(settings.has_key("kimi"))
+        self.assertEqual(settings.get_key("kimi"), "sk-kimi-1234567890abcd")
+        masked = settings.mask_key(settings.get_key("kimi"))
+        self.assertNotIn("1234567890", masked)
+        self.assertTrue(masked.startswith("sk-"))
+        self.assertTrue(masked.endswith("abcd"))
+
+    def test_imported_key_works_without_env_key(self):
+        with patch.object(config, "KIMI_API_KEY", ""):
+            self.assertFalse(settings.has_key("kimi"))
+            settings.set_key("kimi", "sk-imported-key-0001")
+            self.assertTrue(settings.has_key("kimi"))
+            settings.save({"provider": "kimi"})
+            self.assertEqual(settings.effective_provider(), "kimi")
+
+    def test_clear_key_falls_back_to_env(self):
+        settings.set_key("kimi", "sk-imported-key-0001")
+        settings.set_key("kimi", "")
+        with patch.object(config, "KIMI_API_KEY", "sk-env-kimi"):
+            self.assertEqual(settings.get_key("kimi"), "sk-env-kimi")
+        with patch.object(config, "KIMI_API_KEY", ""):
+            self.assertFalse(settings.has_key("kimi"))
+
+    def test_reject_unknown_provider_key(self):
+        with self.assertRaises(ValueError):
+            settings.set_key("openai", "sk-x")
+
 
 if __name__ == "__main__":
     unittest.main()

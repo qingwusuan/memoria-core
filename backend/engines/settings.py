@@ -1,10 +1,10 @@
-"""运行时设置：模型供应商与叙事视角。
+"""运行时设置与 API Key 存储。
 
-这些是"用户随时会改"的选项，不该只存在于 .env 里。设置落在
-`data/settings.json`（原子写），环境变量只作为默认值与兜底：
+- 偏好（当前供应商、默认叙事视角）落在 `data/settings.json`；
+- API Key 落在 `data/credentials.json`，**不改 `.env`**；环境变量仍作为兜底；
+- 两者都是原子写，不需要重启即可生效。
 
-- provider：用哪家的 key 与模型。只允许 key 已配置的供应商，切换立即生效。
-- narrative_person：`third`（小说体）或 `first`（角色以"我"说话）。
+设置页只负责导入 Key；「用哪家」属于对话时的运行时选择，不放设置里。
 """
 from __future__ import annotations
 
@@ -27,6 +27,10 @@ def _path() -> Path:
     return config.DATA_DIR / "settings.json"
 
 
+def _cred_path() -> Path:
+    return config.DATA_DIR / "credentials.json"
+
+
 def _defaults() -> dict:
     return {
         "provider": None,  # None = 跟随 .env
@@ -34,15 +38,27 @@ def _defaults() -> dict:
     }
 
 
+def _read_json(path: Path) -> dict:
+    try:
+        with path.open("r", encoding="utf-8") as f:
+            data = json.load(f)
+        return data if isinstance(data, dict) else {}
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+
+def _write_json(path: Path, data: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(".json.tmp")
+    with tmp.open("w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+    os.replace(tmp, path)
+
+
 def load() -> dict:
     data = _defaults()
-    try:
-        with _path().open("r", encoding="utf-8") as f:
-            stored = json.load(f)
-        if isinstance(stored, dict):
-            data.update({k: stored[k] for k in data if k in stored})
-    except (OSError, json.JSONDecodeError):
-        pass
+    stored = _read_json(_path())
+    data.update({k: stored[k] for k in data if k in stored})
     if data["narrative_person"] not in ALLOWED_PERSONS:
         data["narrative_person"] = "third"
     if data["provider"] not in ALLOWED_PROVIDERS:
@@ -51,7 +67,7 @@ def load() -> dict:
 
 
 def save(patch: dict) -> dict:
-    """合并并持久化设置；非法值直接拒绝（抛 ValueError）。"""
+    """合并并持久化偏好；非法值直接拒绝（抛 ValueError）。"""
     with _lock:
         data = load()
         if "provider" in patch:
@@ -71,11 +87,7 @@ def save(patch: dict) -> dict:
                 raise ValueError("叙事视角只能是 first 或 third")
             data["narrative_person"] = person
 
-        tmp = _path().with_suffix(".json.tmp")
-        tmp.parent.mkdir(parents=True, exist_ok=True)
-        with tmp.open("w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
-        os.replace(tmp, _path())
+        _write_json(_path(), data)
         return data
 
 
@@ -83,12 +95,53 @@ def get(key: str):
     return load().get(key)
 
 
-def has_key(provider: str) -> bool:
+# ---------- API Key ----------
+
+def _load_credentials() -> dict:
+    raw = _read_json(_cred_path())
+    return {
+        k: v for k, v in raw.items()
+        if k in ALLOWED_PROVIDERS and isinstance(v, str) and v.strip()
+    }
+
+
+def get_key(provider: str) -> str:
+    """优先用设置页导入的 Key，其次回落到环境变量。"""
+    stored = _load_credentials().get(provider)
+    if stored:
+        return stored
     if provider == "kimi":
-        return bool(config.KIMI_API_KEY)
-    if provider == "deepseek":
-        return bool(config.LLM_API_KEY)
-    return False
+        return config.KIMI_API_KEY or ""
+    return config.LLM_API_KEY or ""
+
+
+def set_key(provider: str, key: str) -> bool:
+    """导入 / 更新 Key；传空字符串表示清除。返回是否已配置。"""
+    if provider not in ALLOWED_PROVIDERS:
+        raise ValueError(f"不支持的供应商：{provider}")
+    with _lock:
+        creds = _load_credentials()
+        cleaned = (key or "").strip()
+        if cleaned:
+            creds[provider] = cleaned
+        else:
+            creds.pop(provider, None)
+        _write_json(_cred_path(), creds)
+    return bool(get_key(provider))
+
+
+def mask_key(key: str) -> str:
+    """只回显首尾，避免把完整 Key 传给前端。"""
+    key = (key or "").strip()
+    if not key:
+        return ""
+    if len(key) <= 8:
+        return "…"
+    return f"{key[:3]}…{key[-4:]}"
+
+
+def has_key(provider: str) -> bool:
+    return bool(get_key(provider))
 
 
 def effective_provider() -> str:
@@ -116,6 +169,7 @@ def available_providers() -> list[dict]:
             "label": _PROVIDER_LABELS[provider],
             "model": model_of(provider),
             "has_key": has_key(provider),
+            "masked": mask_key(get_key(provider)),
         }
         for provider in ALLOWED_PROVIDERS
     ]
