@@ -187,6 +187,9 @@
           </div>
         </div>
 
+      </div>
+
+      <div class="chat-compose">
         <!-- 已选指令胶囊 -->
         <div v-if="selectedCmds.length" class="cmd-chips">
           <span v-for="name in selectedCmds" :key="name" class="cmd-chip">
@@ -821,6 +824,19 @@ function autoResize() {
 /* ────────── 右侧聊天区 ────────── */
 .chat-main {
   flex: 1; display: flex; flex-direction: column; min-width: 0;
+}
+
+/* 消息滚动区：占满剩余高度，输入框才会固定在底部 */
+.chat-body {
+  flex: 1; overflow-y: auto; padding: 18px 20px 10px;
+  display: flex; flex-direction: column; gap: 12px;
+}
+.chat-empty { color: #555; font-size: 13px; padding: 40px 0; text-align: center; }
+
+/* 输入区固定在底部的容器（消息在 .chat-body 内滚动） */
+.chat-compose {
+  flex-shrink: 0; display: flex; flex-direction: column; align-items: center;
+  gap: 8px; padding: 6px 20px 14px;
 }
 
 /* 模型选择条 */
