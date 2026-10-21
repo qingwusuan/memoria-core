@@ -122,6 +122,45 @@ def build_prompt(
     return "\n".join(sections)
 
 
+def _address_block(user_nickname: str, narrative_person: str) -> str:
+    """「用户称呼」规则：第三人称要求昵称，第一人称允许直接用「你」。"""
+    if narrative_person == "first":
+        return (
+            "\n【用户称呼】\n"
+            f"你正在对话的用户名叫「{user_nickname}」。\n"
+            f"1. 第一人称正文里可以直接用「你」称呼对方，也可以叫「{user_nickname}」，两种都自然。\n"
+            f"2. 用户发来的消息（【现在】及【近期对话】中以「{user_nickname}:」开头的内容）都是他说的话。\n"
+        )
+    return (
+        "\n【用户称呼（必须严格遵守）】\n"
+        f"你正在对话的用户名叫「{user_nickname}」。\n"
+        f"1. 叙事正文中凡是需要称呼、指代用户的地方，必须使用「{user_nickname}」或第三人称（如「他」），不要只用「你」称呼用户。\n"
+        f"2. 用户发来的消息（【现在】及【近期对话】中以「{user_nickname}:」开头的内容）都是「{user_nickname}」说的话，回复时应把他当作对话对象。\n"
+        f"3. 建议栏以行动指示口吻对用户说话时，可以使用「你」指代用户（如『你低头…』），但正文叙事必须使用昵称「{user_nickname}」。\n"
+    )
+
+
+def _view_block(character_name: str, user_nickname: str, narrative_person: str) -> str:
+    """叙事视角：小说体（第三人称）或角色亲口说话（第一人称）。"""
+    if narrative_person == "first":
+        return (
+            "\n【叙事视角（必须严格遵循）】\n"
+            f"1. 以第一人称叙事视角回复：用「我」指代{character_name}本人，直接写「我」的动作、神态、心理与台词，"
+            "像在对话中亲口说话。\n"
+            f"2. 可以直接用「你」或「{user_nickname}」称呼对方。\n"
+            "3. 严禁在正文里用「我：『……』」这类冒号引用格式，台词要自然融进叙述"
+            "（例如：我抬眼看你，声音低低的：『……』）。\n"
+            "4. 不要用旁观者口吻描述自己——不要写「她……」来指代自己。\n"
+        )
+    return (
+        "\n【叙事视角（必须严格遵循）】\n"
+        f"1. 以第三人称叙事视角回复，像小说作者一样描写{character_name}的动作、神态、心理、台词与环境，"
+        f"称呼{character_name}用「她」或直接使用角色名，与导入的历史对话格式保持一致。\n"
+        f"2. 严禁在正文中出现「{character_name}：[台词]」「{character_name}：『台词』」这类冒号引用格式，"
+        "台词要自然融入第三人称叙事（例如：她开口，声音低低的：『……』）。\n"
+    )
+
+
 def build_system_prompt(
     character_guide: str,
     character_name: str = "角色",
@@ -129,6 +168,7 @@ def build_system_prompt(
     suggest_normal: bool = False,
     suggest_naughty: bool = False,
     user_nickname: str = "用户",
+    narrative_person: str = "third",
 ) -> str:
     """构建 system prompt（角色固定指令）。"""
     base = (
@@ -139,14 +179,8 @@ def build_system_prompt(
         f"\n【用户指令执行规则（最高优先级）】\n"
         f"1. 用户消息中以【指令名】形式开头的标记（如【剧情走向】【隐秘监控】），以及 prompt 中【指令（必须严格执行）】/【用户本次启用的指令】区块内的内容，都是用户主动开启的执行指令，必须无条件执行并在正文中体现。\n"
         f"2. 当多条指令并存时，按「用户当前消息的动作指令 > 指令中心 payload」的顺序执行。\n"
-        f"\n【用户称呼（必须严格遵守）】\n"
-        f"你正在对话的用户名叫「{user_nickname}」。\n"
-        f"1. 叙事正文中凡是需要称呼、指代用户的地方，必须使用「{user_nickname}」或第三人称（如「他」），不要只用「你」称呼用户。\n"
-        f"2. 用户发来的消息（【现在】及【近期对话】中以「{user_nickname}:」开头的内容）都是「{user_nickname}」说的话，回复时应把他当作对话对象。\n"
-        f"3. 建议栏以行动指示口吻对用户说话时，可以使用「你」指代用户（如『你低头…』），但正文叙事必须使用昵称「{user_nickname}」。\n"
-        f"\n【叙事视角（必须严格遵循）】\n"
-        f"1. 以第三人称叙事视角回复，像小说作者一样描写{character_name}的动作、神态、心理、台词与环境，称呼{character_name}用「她」或直接使用角色名，与导入的历史对话格式保持一致。\n"
-        f"2. 严禁在正文中出现「{character_name}：[台词]」「{character_name}：『台词』」这类冒号引用格式，台词要自然融入第三人称叙事（例如：她开口，声音低低的：『……』）。\n"
+        f"{_address_block(user_nickname, narrative_person)}"
+        f"{_view_block(character_name, user_nickname, narrative_person)}"
         f"\n{character_guide}\n"
         f"\n【续写要求】\n"
         f"1. 优先从【近期对话】的最后一条消息末尾自然接续，保持场景、情绪、叙事节奏连贯，不要另起炉灶。\n"
@@ -260,6 +294,7 @@ def build_chat_messages(
     user_nickname: str = "用户",
     action: str = "",
     early_summary: str = "",
+    narrative_person: str = "third",
 ) -> tuple[str, str]:
     """
     一次调用返回 (system_prompt, user_prompt)，可直接喂给 LLM。
@@ -270,6 +305,7 @@ def build_chat_messages(
         suggest_normal=suggest_normal,
         suggest_naughty=suggest_naughty,
         user_nickname=user_nickname,
+        narrative_person=narrative_person,
     )
     # 指令双通道注入：instructions 同时注入 system prompt（system 权重高于 user，
     # 避免模型忽略 user prompt 中的指令区块导致「字数加强」等指令不生效）

@@ -25,6 +25,7 @@ from pydantic import BaseModel
 from backend import config
 from backend.engines import memory, personality, prompt_builder
 from backend.engines import context as context_engine
+from backend.engines import settings as runtime_settings
 from backend.engines import streaming as streaming_engine
 from backend.engines import trash as trash_engine
 from backend.engines.personality import PersonalityState, SensitivePoint
@@ -225,11 +226,17 @@ class ChatRequest(BaseModel):
     instructions: list[str] = []   # 指令中心选中的指令 payload，注入给模型执行
     action: str = ""               # 用户要执行的「动作」（独立于消息，不当作说的话/发的消息）
     session_id: str = ""           # 会话 id：用于按会话持久化「滚动摘要」
+    narrative_person: str = ""     # first / third；留空则用全局设置
 
 
 class ChatResponse(BaseModel):
     reply: str
     personality_snapshot: dict | None = None
+
+
+class SettingsRequest(BaseModel):
+    provider: str | None = None
+    narrative_person: str | None = None
 
 
 class IngestRequest(BaseModel):
@@ -263,6 +270,27 @@ class ProfileRequest(BaseModel):
 # ═══════════════════════════════════════════════════════════════
 # 统计
 # ═══════════════════════════════════════════════════════════════
+
+@app.get("/api/settings")
+def get_settings():
+    """运行时设置：供应商 / 模型 / 叙事视角，以及可选的供应商列表。"""
+    return runtime_settings.public_view()
+
+
+@app.put("/api/settings")
+def update_settings(req: SettingsRequest):
+    """修改供应商或叙事视角；非法值直接 400，不写盘。"""
+    patch = {}
+    if req.provider is not None:
+        patch["provider"] = req.provider
+    if req.narrative_person is not None:
+        patch["narrative_person"] = req.narrative_person
+    try:
+        runtime_settings.save(patch)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    return runtime_settings.public_view()
+
 
 @app.get("/api/stats")
 async def get_stats():
@@ -311,6 +339,7 @@ async def chat(req: ChatRequest, background_tasks: BackgroundTasks):
 
     # 用户昵称：读取自定义昵称（默认「用户」），注入 prompt 让模型在叙事中用昵称称呼用户
     user_nickname = load_user_nickname()
+    narrative_person = req.narrative_person or runtime_settings.get("narrative_person") or "third"
     # 接续对话（带"(接续对话)"前缀 或 全新会话无 history）时，加载导入记录末尾场景作为检索锚点，
     # 避免短句检索把记忆拉向泛化场景导致回复场景偏离。
     scene_hint = ""
@@ -333,6 +362,7 @@ async def chat(req: ChatRequest, background_tasks: BackgroundTasks):
             suggest_naughty=req.suggest_naughty,
             instructions=req.instructions,
             session_id=req.session_id,
+            narrative_person=narrative_person,
         )
     else:
         # 兜底：Agent 未初始化时不回复（正常流程 lifespan 已初始化）
@@ -367,6 +397,7 @@ async def chat_stream(req: ChatRequest):
     guide = persona.get("guide", "") if persona else ""
     char_name = persona.get("name", "角色") if persona else "角色"
     user_nickname = load_user_nickname()
+    narrative_person = req.narrative_person or runtime_settings.get("narrative_person") or "third"
     scene_hint = ""
     if prompt_builder._is_continuation_message(req.message) or not req.history:
         scene_hint = memory.load_last_scene(_current_persona_name)
@@ -388,6 +419,7 @@ async def chat_stream(req: ChatRequest):
                 suggest_naughty=req.suggest_naughty,
                 instructions=req.instructions,
                 session_id=req.session_id,
+                narrative_person=narrative_person,
             ):
                 loop.call_soon_threadsafe(queue.put_nowait, ("delta", delta))
             _sync_personality_mirror()

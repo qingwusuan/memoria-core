@@ -40,6 +40,10 @@ Memoria Core 是一个本地部署的 **AI 陪伴 / 角色扮演聊天应用**�
   - 记忆召回不再只看向量距离，按「语义相似度 × 重要性 × 时间新鲜度」加权重排（默认 0.6 / 0.25 / 0.15），三个月前的约定不会再被昨天的一句琐事挤掉。
 - **历史对话导入与场景锚定**
   - 支持粘贴文本或上传文件批量导入历史对话，自动按场景标记拆片、提取事件与片段；记录导入末尾场景，接续对话时自动锚定场景。
+- **运行时设置（可随时切换）**
+  - 叙事视角：第三人称（小说体）↔ 第一人称（角色以「我」说话），聊天页顶部工具栏直接切换，立即生效；
+  - 模型供应商：DeepSeek / Kimi 下拉选择，只列出已配置 Key 的供应商，切换后下一次请求即用新模型；
+  - 设置持久化在 `data/settings.json`，不改 `.env`；`.env` 只作为默认值与兜底。
 - **流式输出**
   - 回复通过 SSE（`/api/chat/stream`）边生成边渲染，首字延迟从“整段生成完”降到 1 秒级；可随时中断，已收到的正文保留；
   - 后端不支持流式时前端自动退回一次性接口，行为与旧版一致。
@@ -253,6 +257,21 @@ POST /api/chat/stream
 流式路径不做「字数加强」的短回复续写兜底（需要完整正文才能判断）；
 中途失败时前端保留已收到的正文并标注「生成中断」，不会整条丢弃。
 
+
+### 运行时设置
+
+```
+GET /api/settings
+→ { provider, provider_from_env, model, narrative_person,
+    providers: [{ id, label, model, has_key }] }
+
+PUT /api/settings
+请求体：{ provider?: "deepseek"|"kimi", narrative_person?: "first"|"third" }
+→ 同 GET
+```
+
+`provider` 只允许切换到已配置 Key 的供应商，否则 400；`narrative_person`
+只接受 `first` / `third`。设置写入 `data/settings.json`，与环境变量分离。
 
 ### 记忆检索
 
