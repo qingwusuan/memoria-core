@@ -56,6 +56,7 @@ class Orchestrator:
         suggest_naughty: bool,
         instructions: list,
         session_id: str = "",
+        narrative_person: str = "third",
     ) -> tuple[str, Optional[dict], Optional[Callable[[], None]]]:
         """同步执行本轮完整对话，返回 (reply, snapshot, store_task)。
 
@@ -97,6 +98,7 @@ class Orchestrator:
             user_nickname=user_nickname,
             action=action,
             early_summary=early_summary,
+            narrative_person=narrative_person,
         )
 
         # ── 4. 事件入库判定（条件化，异步）──
@@ -109,7 +111,8 @@ class Orchestrator:
     def stream_sync(self, *, history: list, message: str, action: str,
                     character_name: str, character_guide: str, scene_hint: str,
                     user_nickname: str, suggest_normal: bool, suggest_naughty: bool,
-                    instructions: list, session_id: str = ""):
+                    instructions: list, session_id: str = "",
+                    narrative_person: str = "third"):
         """流式版 chat_sync：先做性格/预算/摘要，再逐段 yield 正文。
 
         事件入库仍是异步的：流结束后在后台线程里跑，不拖住响应。
@@ -148,6 +151,7 @@ class Orchestrator:
             user_nickname=user_nickname,
             action=action,
             early_summary=early_summary,
+            narrative_person=narrative_person,
         ):
             chunks.append(delta)
             yield delta

@@ -34,6 +34,26 @@
 
     <!-- 右侧聊天区 -->
     <div class="chat-main">
+      <div class="chat-toolbar" v-if="providers.length">
+        <label class="tb-item">
+          <span class="tb-label">视角</span>
+          <select v-model="narrativePerson" @change="saveNarrative" :disabled="settingsSaving">
+            <option value="third">第三人称</option>
+            <option value="first">第一人称</option>
+          </select>
+        </label>
+        <label class="tb-item">
+          <span class="tb-label">模型</span>
+          <select v-model="provider" @change="saveProvider" :disabled="settingsSaving">
+            <option
+              v-for="p in providers" :key="p.id" :value="p.id" :disabled="!p.has_key"
+            >
+              {{ p.label }}{{ p.has_key ? '' : '（未配置 Key）' }}
+            </option>
+          </select>
+        </label>
+        <span class="tb-model">{{ currentModel }}</span>
+      </div>
       <div class="chat-body" ref="bodyRef">
         <div v-if="!messages.length && !loading" class="chat-empty">
           发送第一条消息，或点击 + 上传对话记录文件。
@@ -315,12 +335,63 @@ async function saveNick() {
 const sessionId = ref(null)
 const sessions = ref([])
 
+// 运行时设置（供应商 / 叙事视角）
+const narrativePerson = ref('third')
+const provider = ref('')
+const providers = ref([])
+const currentModel = ref('')
+const settingsSaving = ref(false)
+
+function applySettings(data) {
+  narrativePerson.value = data.narrative_person || 'third'
+  provider.value = data.provider || ''
+  providers.value = data.providers || []
+  currentModel.value = data.model || ''
+}
+
+async function loadSettings() {
+  try {
+    const r = await api.getSettings()
+    applySettings(r.data)
+  } catch {
+    // 旧后端没有 /api/settings：不显示工具栏即可，不影响聊天
+    providers.value = []
+  }
+}
+
+async function saveNarrative() {
+  settingsSaving.value = true
+  try {
+    const r = await api.updateSettings({ narrative_person: narrativePerson.value })
+    applySettings(r.data)
+  } catch (e) {
+    alert('切换视角失败：' + (e.response?.data?.detail || e.message))
+    await loadSettings()
+  } finally {
+    settingsSaving.value = false
+  }
+}
+
+async function saveProvider() {
+  settingsSaving.value = true
+  try {
+    const r = await api.updateSettings({ provider: provider.value })
+    applySettings(r.data)
+  } catch (e) {
+    alert('切换模型失败：' + (e.response?.data?.detail || e.message))
+    await loadSettings()
+  } finally {
+    settingsSaving.value = false
+  }
+}
+
 onMounted(async () => {
   try {
     const r = await api.getStats()
     activePersona.value = r.data?.active_persona || ''
   } catch {}
   await loadNickname()
+  await loadSettings()
   await loadSessions()
   // 自动打开最近一次会话
   if (sessions.value.length) {
@@ -781,6 +852,23 @@ function autoResize() {
   flex: 1; display: flex; flex-direction: column; min-width: 0;
 }
 
+/* 运行时设置条：视角 / 模型 */
+.chat-toolbar {
+  display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+  padding: 8px 20px; border-bottom: 1px solid rgba(255,255,255,0.05);
+  font-size: 12px; color: #777;
+}
+.tb-item { display: inline-flex; align-items: center; gap: 6px; }
+.tb-label { color: #666; }
+.chat-toolbar select {
+  background: #141414; color: #BBB; border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 6px; padding: 3px 7px; font-size: 12px; outline: none;
+  font-family: inherit;
+}
+.chat-toolbar select:hover { border-color: rgba(255,255,255,0.16); }
+.chat-toolbar select:disabled { opacity: 0.5; }
+.tb-model { margin-left: auto; color: #4E4E4E; font-size: 11.5px; }
+
 .chat-body {
   flex: 1; overflow-y: auto; padding: 18px 20px 10px;
   display: flex; flex-direction: column; gap: 12px;
@@ -1099,6 +1187,8 @@ function autoResize() {
     padding: 10px 14px; flex-shrink: 0;
     border-bottom: 1px solid rgba(255,255,255,0.04);
   }
+  .chat-toolbar { padding: 7px 14px; gap: 10px; }
+  .tb-model { display: none; }
   .chat-mobile-menu {
     background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.08);
     color: #AAA; width: 34px; height: 34px; border-radius: 8px;

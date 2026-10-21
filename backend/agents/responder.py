@@ -49,6 +49,7 @@ class ResponderAgent(Agent):
         user_nickname: str,
         action: str,
         early_summary: str = "",
+        narrative_person: str = "third",
     ) -> tuple[str, str]:
         """构建 (system_prompt, user_prompt)。"""
         return prompt_builder.build_chat_messages(
@@ -65,6 +66,7 @@ class ResponderAgent(Agent):
             user_nickname=user_nickname,
             action=action,
             early_summary=early_summary,
+            narrative_person=narrative_person,
         )
 
     def run(self, **ctx) -> str:

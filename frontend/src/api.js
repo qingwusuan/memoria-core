@@ -4,6 +4,9 @@ const api = axios.create({ baseURL: '/api', timeout: 30000 })
 
 export default {
   getStats: () => api.get('/stats'),
+  // 运行时设置：供应商 / 模型 / 叙事视角
+  getSettings: () => api.get('/settings'),
+  updateSettings: (patch) => api.put('/settings', patch),
   chat: (message, history, options = {}, config = {}) => api.post('/chat', { message, history, ...options }, { timeout: 300000, ...config }),
   // 流式对话：返回未解析的 fetch Response（SSE），由调用方逐段读取
   chatStream: (message, history, options = {}, config = {}) => fetch('/api/chat/stream', {

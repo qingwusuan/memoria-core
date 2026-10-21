@@ -4,6 +4,7 @@ LLM 客户端封装 — 支持 DeepSeek / Kimi 切换
 """
 from openai import OpenAI
 from backend import config
+from backend.engines import settings as runtime_settings
 
 import sys
 import threading
@@ -52,7 +53,7 @@ def _acquire_llm_lock(lock: threading.Lock, name: str) -> None:
 
 def get_client() -> OpenAI:
     global _client, _provider_loaded
-    provider = config.LLM_PROVIDER
+    provider = runtime_settings.effective_provider()
 
     if _client is None or _provider_loaded != provider:
         if provider == "kimi":
@@ -77,8 +78,8 @@ def chat(prompt: str, system: str = "", temperature: float = 0.3, max_tokens: in
         messages.append({"role": "system", "content": system})
     messages.append({"role": "user", "content": prompt})
 
-    provider = config.LLM_PROVIDER
-    model = config.KIMI_MODEL if provider == "kimi" else config.LLM_MODEL
+    provider = runtime_settings.effective_provider()
+    model = runtime_settings.model_of(provider)
 
     # kimi-k2.5 仅支持 temperature=1，强制覆盖
     if provider == "kimi":
@@ -137,8 +138,8 @@ def stream_chat(prompt: str, system: str = "", temperature: float = 0.3,
         messages.append({"role": "system", "content": system})
     messages.append({"role": "user", "content": prompt})
 
-    provider = config.LLM_PROVIDER
-    model = config.KIMI_MODEL if provider == "kimi" else config.LLM_MODEL
+    provider = runtime_settings.effective_provider()
+    model = runtime_settings.model_of(provider)
     if provider == "kimi":
         temperature = 1.0
 
