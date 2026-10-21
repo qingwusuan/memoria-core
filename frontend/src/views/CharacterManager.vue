@@ -5,10 +5,16 @@
         <h1>角色管理</h1>
         <p class="hd-sub">管理 AI 角色的性格指南与对话人设</p>
       </div>
-      <button class="btn btn-primary" @click="showCreate = true">
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14M5 12h14"/></svg>
-        新建角色
-      </button>
+      <div class="hd-actions">
+        <button class="btn" @click="openTrash">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6M10 11v5M14 11v5"/></svg>
+          回收站<span class="trash-count" v-if="trash.length">{{ trash.length }}</span>
+        </button>
+        <button class="btn btn-primary" @click="showCreate = true">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14M5 12h14"/></svg>
+          新建角色
+        </button>
+      </div>
     </header>
 
     <div class="persona-grid" v-if="personas.length">
@@ -88,6 +94,39 @@
         </div>
       </div>
     </div>
+
+    <div class="modal-overlay" v-if="showTrash" @mousedown.self="bgPress = true" @click.self="bgPress && (showTrash = false, bgPress = false)">
+      <div class="modal trash-modal">
+        <div class="tm-hd">
+          <h3>回收站</h3>
+          <button class="btn-close" @click="showTrash = false">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"/></svg>
+          </button>
+        </div>
+        <p class="tm-hint">删除角色时的完整备份，保留 7 天。恢复会一起还原角色定义、性格状态、聊天记录、滚动摘要、场景锚点与记忆库。</p>
+
+        <div class="tm-empty" v-if="!trash.length">回收站是空的。</div>
+
+        <div class="tm-list" v-else>
+          <div class="tm-item" v-for="t in trash" :key="t.id">
+            <div class="tm-avatar">{{ t.persona[0] || '?' }}</div>
+            <div class="tm-body">
+              <div class="tm-name">{{ t.persona }}</div>
+              <div class="tm-meta">{{ formatTime(t.created_at) }} · {{ formatSize(t.size_bytes) }}</div>
+              <div class="tm-parts">
+                <span class="tm-chip" v-for="part in t.parts" :key="part">{{ partLabel(part) }}</span>
+              </div>
+            </div>
+            <div class="tm-actions">
+              <button class="btn" :disabled="trashBusy === t.id" @click="restore(t)">
+                {{ trashBusy === t.id ? '恢复中…' : '恢复' }}
+              </button>
+              <button class="btn btn-danger" :disabled="trashBusy === t.id" @click="purge(t)">彻底删除</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -103,6 +142,18 @@ const showCreate = ref(false)
 const newName = ref('')
 const newGuide = ref('')
 const bgPress = ref(false)
+const showTrash = ref(false)
+const trash = ref([])
+const trashBusy = ref('')
+
+const PART_LABELS = {
+  'persona.json': '角色定义',
+  personality: '性格',
+  chat_logs: '聊天',
+  summaries: '摘要',
+  memories: '记忆',
+  last_scene: '场景',
+}
 
 async function load() {
   try {
@@ -149,8 +200,77 @@ async function remove() {
     await api.deletePersona(detail.value.name)
     detail.value = null
     await load()
+    await loadTrash(true)
   } catch (e) {
     alert('删除角色失败：' + (e.response?.data?.detail || e.message))
+  }
+}
+
+/* ──────────── 回收站 ──────────── */
+function partLabel(part) { return PART_LABELS[part] || part }
+function formatTime(ts) {
+  if (!ts) return '时间未知'
+  const d = new Date(ts * 1000)
+  const p = n => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`
+}
+function formatSize(bytes) {
+  if (!bytes) return '0 B'
+  if (bytes < 1024) return bytes + ' B'
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB'
+  return (bytes / 1024 / 1024).toFixed(1) + ' MB'
+}
+async function loadTrash(silent = false) {
+  try {
+    const r = await api.listTrash()
+    trash.value = r.data.items || []
+  } catch (e) {
+    trash.value = []
+    if (!silent) alert('加载回收站失败：' + (e.response?.data?.detail || e.message))
+  }
+}
+function openTrash() {
+  showTrash.value = true
+  loadTrash()
+}
+async function restore(t) {
+  if (!confirm(`恢复「${t.persona}」？将还原角色定义、性格、聊天、摘要、场景与记忆。`)) return
+  trashBusy.value = t.id
+  try {
+    await api.restoreTrash(t.id)
+    await load()
+    await loadTrash(true)
+    alert(`已恢复「${t.persona}」`)
+  } catch (e) {
+    const status = e.response?.status
+    const detail = e.response?.data?.detail || e.message
+    if (status === 409 && confirm(`${detail}\n\n要用这份备份覆盖现有角色吗？`)) {
+      try {
+        await api.restoreTrash(t.id, true)
+        await load()
+        await loadTrash(true)
+        alert(`已覆盖恢复「${t.persona}」`)
+      } catch (e2) {
+        alert('恢复失败：' + (e2.response?.data?.detail || e2.message))
+      }
+    } else if (status !== 409) {
+      alert('恢复失败：' + detail)
+    }
+  } finally {
+    trashBusy.value = ''
+  }
+}
+async function purge(t) {
+  if (!confirm(`彻底删除「${t.persona}」的备份？此操作不可恢复。`)) return
+  if (!confirm(`再次确认：备份删除后，角色、聊天与摘要在磁盘上不再保留任何副本。`)) return
+  trashBusy.value = t.id
+  try {
+    await api.purgeTrash(t.id)
+    await loadTrash(true)
+  } catch (e) {
+    alert('删除备份失败：' + (e.response?.data?.detail || e.message))
+  } finally {
+    trashBusy.value = ''
   }
 }
 async function create() {
@@ -164,7 +284,7 @@ async function create() {
     alert('创建角色失败：' + (e.response?.data?.detail || e.message))
   }
 }
-onMounted(load)
+onMounted(() => { load(); loadTrash(true) })
 </script>
 
 <style scoped>
@@ -295,6 +415,42 @@ onMounted(load)
 .btn-danger:hover { background: rgba(224,80,80,0.12); border-color: rgba(224,80,80,0.3); color: #D06060; }
 .btn:disabled { opacity: 0.3; cursor: not-allowed; }
 
+/* ────────── 回收站 ────────── */
+.hd-actions { display: flex; align-items: center; gap: 8px; }
+.trash-count {
+  min-width: 17px; height: 17px; padding: 0 5px; margin-left: 2px;
+  border-radius: 9px; background: rgba(91,141,239,0.18); color: #7FA6F5;
+  font-size: 10.5px; font-weight: 600; display: inline-flex;
+  align-items: center; justify-content: center;
+}
+.trash-modal { width: 640px; max-height: 78vh; overflow: hidden; }
+.tm-hd { display: flex; align-items: center; justify-content: space-between; }
+.tm-hd h3 { font-size: 17px; font-weight: 600; color: #E0E0E0; }
+.tm-hd .btn-close { margin-left: 0; }
+.tm-hint { font-size: 12px; color: #666; line-height: 1.65; margin-top: -6px; }
+.tm-empty { padding: 26px 0; text-align: center; font-size: 13px; color: #555; }
+.tm-list { overflow-y: auto; max-height: 52vh; display: flex; flex-direction: column; gap: 8px; }
+.tm-item {
+  display: flex; align-items: center; gap: 12px; padding: 12px 14px;
+  background: #0D0D0D; border: 1px solid rgba(255,255,255,0.05); border-radius: 9px;
+}
+.tm-avatar {
+  width: 36px; height: 36px; border-radius: 9px; flex-shrink: 0;
+  background: linear-gradient(135deg, #3A3A3A, #2A2A2A);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 15px; font-weight: 700; color: #888;
+}
+.tm-body { flex: 1; min-width: 0; }
+.tm-name { font-size: 13.5px; font-weight: 600; color: #D0D0D0; }
+.tm-meta { font-size: 11.5px; color: #666; margin-top: 2px; }
+.tm-parts { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+.tm-chip {
+  font-size: 10.5px; padding: 1px 6px; border-radius: 5px;
+  background: rgba(255,255,255,0.05); color: #777;
+}
+.tm-actions { display: flex; gap: 6px; flex-shrink: 0; }
+.tm-actions .btn { padding: 6px 12px; font-size: 12.5px; }
+
 /* ────────── 移动端适配（<768px）────────── */
 @media (max-width: 768px) {
   .page-hd { flex-direction: column; gap: 12px; margin-bottom: 20px; }
@@ -318,6 +474,10 @@ onMounted(load)
     width: 100%; max-height: 92vh; border-radius: 16px 16px 0 0;
     padding: 20px 18px; overflow-y: auto;
   }
+  .trash-modal { width: 100%; max-height: 92vh; border-radius: 16px 16px 0 0; }
+  .tm-list { max-height: 58vh; }
+  .tm-item { align-items: flex-start; flex-wrap: wrap; }
+  .tm-actions { width: 100%; justify-content: flex-end; }
   .modal-ft .btn { flex: 1; justify-content: center; }
 }
 </style>
