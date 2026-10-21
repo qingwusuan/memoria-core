@@ -56,12 +56,9 @@ def get_client() -> OpenAI:
     provider = runtime_settings.effective_provider()
 
     if _client is None or _provider_loaded != provider:
-        if provider == "kimi":
-            api_key = runtime_settings.get_key("kimi")
-            base_url = config.KIMI_BASE_URL
-        else:  # deepseek (default)
-            api_key = runtime_settings.get_key("deepseek")
-            base_url = config.LLM_BASE_URL
+        cfg = runtime_settings.provider_config(provider) or {}
+        api_key = runtime_settings.get_key(provider)
+        base_url = cfg.get("base_url") or config.LLM_BASE_URL
 
         _client = OpenAI(api_key=api_key, base_url=base_url)
         _provider_loaded = provider

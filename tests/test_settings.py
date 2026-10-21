@@ -91,6 +91,38 @@ class SettingsTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             settings.set_key("openai", "sk-x")
 
+    def test_add_custom_provider_and_use_it(self):
+        cfg = settings.add_provider("我的中转", "https://api.example.com/v1", "gpt-4o-mini")
+        self.assertEqual(cfg["id"], "custom")
+        self.assertIn("custom", [p["id"] for p in settings.available_providers()])
+        settings.set_key("custom", "sk-custom-12345678")
+        settings.save({"provider": "custom"})
+        self.assertEqual(settings.effective_provider(), "custom")
+        self.assertEqual(settings.model_of("custom"), "gpt-4o-mini")
+
+    def test_custom_provider_id_is_deduplicated(self):
+        settings.add_provider("Relay", "https://a.example.com/v1", "m1")
+        second = settings.add_provider("Relay", "https://b.example.com/v1", "m2")
+        self.assertEqual(second["id"], "relay-2")
+
+    def test_remove_custom_provider_clears_key(self):
+        settings.add_provider("临时", "https://c.example.com/v1", "m")
+        custom_id = [p["id"] for p in settings.list_providers() if not p["builtin"]][0]
+        settings.set_key(custom_id, "sk-temp-12345678")
+        settings.remove_provider(custom_id)
+        self.assertIsNone(settings.provider_config(custom_id))
+        self.assertEqual(settings.get_key(custom_id), "")
+
+    def test_reject_builtin_removal_and_bad_custom_fields(self):
+        with self.assertRaises(ValueError):
+            settings.remove_provider("deepseek")
+        with self.assertRaises(ValueError):
+            settings.add_provider("", "https://x.example.com", "m")
+        with self.assertRaises(ValueError):
+            settings.add_provider("x", "ftp://x", "m")
+        with self.assertRaises(ValueError):
+            settings.add_provider("x", "https://x.example.com", "")
+
 
 if __name__ == "__main__":
     unittest.main()

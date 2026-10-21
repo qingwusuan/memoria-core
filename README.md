@@ -41,9 +41,10 @@ Memoria Core 是一个本地部署的 **AI 陪伴 / 角色扮演聊天应用**�
 - **历史对话导入与场景锚定**
   - 支持粘贴文本或上传文件批量导入历史对话，自动按场景标记拆片、提取事件与片段；记录导入末尾场景，接续对话时自动锚定场景。
 - **设置只放凭据**
-  - 侧边栏「设置」只做 API Key 导入：按供应商保存 / 替换 / 清除，只回显掩码（`sk-…abcd`），不写 `.env`；
+  - 侧边栏「设置」负责 API Key 导入：内置 DeepSeek / Kimi，也支持登记任意 OpenAI 兼容供应商（名称 / 接口地址 / 模型名 / Key）；
+  - Key 只回显掩码（`sk-…abcd`），不写 `.env`；清除后自动回落到环境变量；
   - 模型供应商在对话页顶部选择（运行时选择，不是设置）；叙事视角在角色详情里按角色设置；
-  - 偏好持久化在 `data/settings.json`，Key 在 `data/credentials.json`，`.env` 只做默认值与兜底。
+  - 偏好持久化在 `data/settings.json`，Key 在 `data/credentials.json`，自定义供应商在 `data/providers.json`。
 - **流式输出**
   - 回复通过 SSE（`/api/chat/stream`）边生成边渲染，首字延迟从“整段生成完”降到 1 秒级；可随时中断，已收到的正文保留；
   - 后端不支持流式时前端自动退回一次性接口，行为与旧版一致。
@@ -289,6 +290,19 @@ Key 保存在 `data/credentials.json`（本机明文，仅本机使用），**�
 清除后自动回落到 `DEEPSEEK_API_KEY` / `KIMI_API_KEY`。设置页只负责这件事，
 「用哪家」是对话页顶部的运行时选择。
 
+### 供应商管理（任意 OpenAI 兼容接口）
+
+```
+GET    /api/providers                     # 内置 + 自定义，含 has_key / masked
+POST   /api/providers                     # 登记 { label, base_url, model }
+DELETE /api/providers/{provider_id}       # 删除自定义供应商（内置不可删）
+```
+
+不限于 DeepSeek / Kimi：任何兼容 OpenAI `/chat/completions` 的接口（中转站、
+本地 vLLM / Ollama 网关、其它厂商的兼容层）都可以登记。`id` 由名称生成
+（非 ASCII 名称会回退为 `custom`，重复自动加 `-2` 后缀），登记后到设置里
+配 Key 即可出现在对话页的模型下拉中。自定义项存放在 `data/providers.json`。
+
 ### 记忆检索
 
 ```
@@ -385,6 +399,7 @@ PUT /api/user/profile                     # 更新昵称 { nickname }
 | `data/summaries/{角色}/{会话}.json` | 滚动摘要：已压缩的早前剧情与覆盖进度（删除角色时连同备份一起清理） |
 | `data/settings.json` | 运行时偏好：当前供应商、默认叙事视角 |
 | `data/credentials.json` | 设置页导入的 API Key（本机明文，不进版本库） |
+| `data/providers.json` | 自定义 OpenAI 兼容供应商登记表 |
 | `data/last_scenes/` | 导入记录末尾场景锚点（供接续对话定位场景） |
 | `data/user_nickname.json` | 用户昵称（默认"用户"） |
 | `data/active_persona.json` | 当前活跃角色 |

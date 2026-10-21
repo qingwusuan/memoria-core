@@ -244,6 +244,12 @@ class ApiKeyRequest(BaseModel):
     key: str = ""
 
 
+class ProviderRequest(BaseModel):
+    label: str
+    base_url: str
+    model: str
+
+
 class IngestRequest(BaseModel):
     dialogue: str
     run_personality: bool = False
@@ -316,6 +322,36 @@ def set_api_key(req: ApiKeyRequest):
         "masked": runtime_settings.mask_key(runtime_settings.get_key(req.provider)),
         "settings": runtime_settings.public_view(),
     }
+
+
+@app.get("/api/providers")
+def list_providers_api():
+    """列出内置 + 自定义供应商（含是否已配 Key、掩码）。"""
+    return {"providers": runtime_settings.available_providers()}
+
+
+@app.post("/api/providers")
+def create_provider(req: ProviderRequest):
+    """登记一个 OpenAI 兼容供应商；返回后可用 /api/settings/keys 导入 Key。"""
+    try:
+        cfg = runtime_settings.add_provider(req.label, req.base_url, req.model)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    return {
+        "status": "ok",
+        "provider": cfg,
+        "providers": runtime_settings.available_providers(),
+    }
+
+
+@app.delete("/api/providers/{provider_id}")
+def delete_provider(provider_id: str):
+    """删除自定义供应商（内置不可删），同时清掉它的 Key。"""
+    try:
+        runtime_settings.remove_provider(provider_id)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    return {"status": "ok", "providers": runtime_settings.available_providers()}
 
 
 @app.get("/api/stats")
