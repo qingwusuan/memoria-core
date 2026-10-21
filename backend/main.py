@@ -19,12 +19,13 @@ from typing import Optional
 from fastapi import BackgroundTasks, FastAPI, HTTPException, Query, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
 
 from backend import config
 from backend.engines import memory, personality, prompt_builder
 from backend.engines import context as context_engine
+from backend.engines import streaming as streaming_engine
 from backend.engines import trash as trash_engine
 from backend.engines.personality import PersonalityState, SensitivePoint
 from backend.agents.personality import PersonalityAnalyzerAgent
@@ -348,6 +349,72 @@ async def chat(req: ChatRequest, background_tasks: BackgroundTasks):
         background_tasks.add_task(store_task)
 
     return ChatResponse(reply=reply, personality_snapshot=snapshot)
+
+
+@app.post("/api/chat/stream")
+async def chat_stream(req: ChatRequest):
+    """SSE 流式对话：逐段推送正文增量。
+
+    事件类型：
+      - `delta` { text }  正文增量
+      - `error` { message } 生成失败（前端保留已收到的部分）
+      - `done`  {}         正常结束
+    """
+    if _orchestrator is None:
+        raise HTTPException(503, "Agent 未初始化，无法对话")
+
+    persona = load_persona(_current_persona_name)
+    guide = persona.get("guide", "") if persona else ""
+    char_name = persona.get("name", "角色") if persona else "角色"
+    user_nickname = load_user_nickname()
+    scene_hint = ""
+    if prompt_builder._is_continuation_message(req.message) or not req.history:
+        scene_hint = memory.load_last_scene(_current_persona_name)
+
+    loop = asyncio.get_running_loop()
+    queue: asyncio.Queue = asyncio.Queue()
+
+    def produce():
+        try:
+            for delta in _orchestrator.stream_sync(
+                history=req.history,
+                message=req.message,
+                action=req.action,
+                character_name=char_name,
+                character_guide=guide,
+                scene_hint=scene_hint,
+                user_nickname=user_nickname,
+                suggest_normal=req.suggest_normal,
+                suggest_naughty=req.suggest_naughty,
+                instructions=req.instructions,
+                session_id=req.session_id,
+            ):
+                loop.call_soon_threadsafe(queue.put_nowait, ("delta", delta))
+            _sync_personality_mirror()
+            loop.call_soon_threadsafe(queue.put_nowait, ("done", None))
+        except Exception as e:
+            print(f"[main] 流式对话失败: {e}", flush=True)
+            loop.call_soon_threadsafe(queue.put_nowait, ("error", str(e)))
+
+    threading.Thread(target=produce, daemon=True).start()
+
+    async def events():
+        while True:
+            kind, payload = await queue.get()
+            if kind == "delta":
+                yield streaming_engine.format_sse("delta", {"text": payload})
+            elif kind == "error":
+                yield streaming_engine.format_sse("error", {"message": payload})
+                break
+            else:
+                yield streaming_engine.format_sse("done", {})
+                break
+
+    return StreamingResponse(
+        events(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 # ═══════════════════════════════════════════════════════════════

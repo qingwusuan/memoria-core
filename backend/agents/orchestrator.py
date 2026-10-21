@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import logging
+import threading
 from typing import Callable, Optional
 
 from backend.engines import memory
@@ -104,6 +105,58 @@ class Orchestrator:
         )
 
         return reply, self._personality.snapshot(), store_task
+
+    def stream_sync(self, *, history: list, message: str, action: str,
+                    character_name: str, character_guide: str, scene_hint: str,
+                    user_nickname: str, suggest_normal: bool, suggest_naughty: bool,
+                    instructions: list, session_id: str = ""):
+        """流式版 chat_sync：先做性格/预算/摘要，再逐段 yield 正文。
+
+        事件入库仍是异步的：流结束后在后台线程里跑，不拖住响应。
+        """
+        # ── 1. 性格分析（与 chat_sync 完全一致）──
+        if self._personality.state is not None:
+            summary = self._build_summary(history, message, action, character_name)
+            if self._personality.register_round():
+                self._personality.analyze(summary)
+            self._personality.apply_sensitive_points(message or action)
+            self._personality.save()
+
+        # ── 2. 上下文预算 + 滚动摘要 ──
+        recent_dialogue, dropped = context.split_by_budget(history)
+        early_summary = ""
+        if dropped:
+            try:
+                early_summary = context.maybe_update_summary(
+                    self._persona, session_id, dropped
+                )
+            except Exception as e:
+                _logger.warning("滚动摘要不可用，本轮跳过: %s", e)
+
+        # ── 3. 流式主回复 ──
+        chunks: list[str] = []
+        for delta in self._responder.stream(
+            character_guide=character_guide,
+            recent_dialogue=recent_dialogue,
+            current_message=message,
+            personality=self._personality.state,
+            character_name=character_name,
+            suggest_normal=suggest_normal,
+            suggest_naughty=suggest_naughty,
+            scene_hint=scene_hint,
+            instructions=instructions,
+            user_nickname=user_nickname,
+            action=action,
+            early_summary=early_summary,
+        ):
+            chunks.append(delta)
+            yield delta
+
+        # ── 4. 事件入库（后台线程，不阻塞收尾）──
+        reply = "".join(chunks)
+        store_task = self._build_store_task(reply, message, action, character_name)
+        if store_task is not None:
+            threading.Thread(target=store_task, daemon=True).start()
 
     # ---- 内部 ----
     @staticmethod
