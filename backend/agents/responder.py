@@ -50,6 +50,7 @@ class ResponderAgent(Agent):
         action: str,
         early_summary: str = "",
         narrative_person: str = "third",
+        reply_mode: str = "novel",
     ) -> tuple[str, str]:
         """构建 (system_prompt, user_prompt)。"""
         return prompt_builder.build_chat_messages(
@@ -67,6 +68,7 @@ class ResponderAgent(Agent):
             action=action,
             early_summary=early_summary,
             narrative_person=narrative_person,
+            reply_mode=reply_mode,
         )
 
     def run(self, **ctx) -> str:
@@ -77,9 +79,18 @@ class ResponderAgent(Agent):
         character_name / suggest_normal / suggest_naughty / scene_hint /
         instructions / user_nickname / action
         """
+        images = ctx.pop("images", None) or []
         system_prompt, user_prompt = self.build_prompts(**ctx)
 
-        reply = self.llm(user_prompt, system=system_prompt)
+        if images:
+            # 多模态：直接用底层客户端（注入的 llm_impl 不一定支持图片参数）
+            from backend.llm.deepseek import chat as llm_chat
+            reply = llm_chat(
+                user_prompt, system=system_prompt, temperature=self.temperature,
+                max_tokens=self.max_tokens, images=images,
+            )
+        else:
+            reply = self.llm(user_prompt, system=system_prompt)
 
         # 空回复兜底：换更高温度再试一次；仍为空则如实报错（严禁编造文案）
         if not reply or not reply.strip():
@@ -122,6 +133,7 @@ class ResponderAgent(Agent):
         """
         from backend.llm.deepseek import stream_chat
 
+        images = ctx.pop("images", None) or []
         system_prompt, user_prompt = self.build_prompts(**ctx)
         produced = False
         for delta in stream_chat(
@@ -129,6 +141,7 @@ class ResponderAgent(Agent):
             system=system_prompt,
             temperature=self.temperature,
             max_tokens=self.max_tokens,
+            images=images,
         ):
             produced = True
             yield delta

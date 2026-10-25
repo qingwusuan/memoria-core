@@ -40,7 +40,7 @@ def _providers_path() -> Path:
 
 
 def _defaults() -> dict:
-    return {"provider": None, "narrative_person": "third"}
+    return {"provider": None, "narrative_person": "third", "reply_mode": "novel"}
 
 
 def _read_json(path: Path) -> dict:
@@ -68,6 +68,8 @@ def load() -> dict:
     data.update({k: stored[k] for k in data if k in stored})
     if data["narrative_person"] not in ALLOWED_PERSONS:
         data["narrative_person"] = "third"
+    if data.get("reply_mode") not in ("novel", "chat"):
+        data["reply_mode"] = "novel"
     if data["provider"] and not provider_config(data["provider"]):
         data["provider"] = None
     return data
@@ -93,6 +95,12 @@ def save(patch: dict) -> dict:
             if person not in ALLOWED_PERSONS:
                 raise ValueError("叙事视角只能是 first 或 third")
             data["narrative_person"] = person
+
+        if "reply_mode" in patch:
+            mode = patch["reply_mode"]
+            if mode not in ("novel", "chat"):
+                raise ValueError("回复模式只能是 novel 或 chat")
+            data["reply_mode"] = mode
 
         _write_json(_path(), data)
         return data
@@ -303,5 +311,6 @@ def public_view() -> dict:
         "provider_from_env": data["provider"] is None,
         "model": model_of(pid),
         "narrative_person": data["narrative_person"],
+        "reply_mode": data["reply_mode"],
         "providers": available_providers(),
     }

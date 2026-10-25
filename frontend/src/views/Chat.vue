@@ -45,6 +45,13 @@
             </option>
           </select>
         </label>
+        <label class="tb-item">
+          <span class="tb-label">模式</span>
+          <select v-model="replyMode" @change="changeReplyMode" :disabled="switching">
+            <option value="novel">小说</option>
+            <option value="chat">聊天</option>
+          </select>
+        </label>
         <span class="tb-model" v-if="!providers.some(p => p.has_key)">去侧边栏「设置」导入 API Key</span>
       </div>
       <div class="chat-body" ref="bodyRef">
@@ -336,14 +343,28 @@ const sessions = ref([])
 const provider = ref('')
 const providers = ref([])
 const switching = ref(false)
+const replyMode = ref('novel')
 
 async function loadSettings() {
   try {
     const r = await api.getSettings()
     provider.value = r.data.provider || ''
     providers.value = r.data.providers || []
+    replyMode.value = r.data.reply_mode || 'novel'
   } catch {
     providers.value = [] // 旧后端没有该接口：不显示工具栏
+  }
+}
+
+async function changeReplyMode() {
+  switching.value = true
+  try {
+    await api.updateSettings({ reply_mode: replyMode.value })
+  } catch (e) {
+    alert('切换模式失败：' + (e.response?.data?.detail || e.message))
+    await loadSettings()
+  } finally {
+    switching.value = false
   }
 }
 
