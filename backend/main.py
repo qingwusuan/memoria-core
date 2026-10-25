@@ -227,6 +227,8 @@ class ChatRequest(BaseModel):
     action: str = ""               # 用户要执行的「动作」（独立于消息，不当作说的话/发的消息）
     session_id: str = ""           # 会话 id：用于按会话持久化「滚动摘要」
     narrative_person: str = ""     # first / third；留空则用全局设置
+    images: list[str] = []         # data URL / 图片 URL；非空时按多模态发送
+    reply_mode: str = ""           # novel / chat；留空则用全局设置
 
 
 class ChatResponse(BaseModel):
@@ -237,6 +239,7 @@ class ChatResponse(BaseModel):
 class SettingsRequest(BaseModel):
     provider: str | None = None
     narrative_person: str | None = None
+    reply_mode: str | None = None
 
 
 class ApiKeyRequest(BaseModel):
@@ -298,6 +301,8 @@ def update_settings(req: SettingsRequest):
         patch["provider"] = req.provider
     if req.narrative_person is not None:
         patch["narrative_person"] = req.narrative_person
+    if req.reply_mode is not None:
+        patch["reply_mode"] = req.reply_mode
     try:
         runtime_settings.save(patch)
     except ValueError as e:
@@ -403,6 +408,7 @@ async def chat(req: ChatRequest, background_tasks: BackgroundTasks):
     user_nickname = load_user_nickname()
     persona_view = (persona.get("narrative_person") or "") if persona else ""
     narrative_person = req.narrative_person or persona_view or runtime_settings.get("narrative_person") or "third"
+    reply_mode = req.reply_mode or runtime_settings.get("reply_mode") or "novel"
     # 接续对话（带"(接续对话)"前缀 或 全新会话无 history）时，加载导入记录末尾场景作为检索锚点，
     # 避免短句检索把记忆拉向泛化场景导致回复场景偏离。
     scene_hint = ""
@@ -426,6 +432,8 @@ async def chat(req: ChatRequest, background_tasks: BackgroundTasks):
             instructions=req.instructions,
             session_id=req.session_id,
             narrative_person=narrative_person,
+            images=req.images,
+            reply_mode=reply_mode,
         )
     else:
         # 兜底：Agent 未初始化时不回复（正常流程 lifespan 已初始化）
@@ -462,6 +470,7 @@ async def chat_stream(req: ChatRequest):
     user_nickname = load_user_nickname()
     persona_view = (persona.get("narrative_person") or "") if persona else ""
     narrative_person = req.narrative_person or persona_view or runtime_settings.get("narrative_person") or "third"
+    reply_mode = req.reply_mode or runtime_settings.get("reply_mode") or "novel"
     scene_hint = ""
     if prompt_builder._is_continuation_message(req.message) or not req.history:
         scene_hint = memory.load_last_scene(_current_persona_name)
@@ -484,6 +493,8 @@ async def chat_stream(req: ChatRequest):
                 instructions=req.instructions,
                 session_id=req.session_id,
                 narrative_person=narrative_person,
+                images=req.images,
+                reply_mode=reply_mode,
             ):
                 loop.call_soon_threadsafe(queue.put_nowait, ("delta", delta))
             _sync_personality_mirror()

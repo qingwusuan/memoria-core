@@ -5,6 +5,7 @@ LLM 客户端封装 — 支持 DeepSeek / Kimi 切换
 from openai import OpenAI
 from backend import config
 from backend.engines import settings as runtime_settings
+from backend.llm.messages import build_user_content
 
 import sys
 import threading
@@ -66,14 +67,16 @@ def get_client() -> OpenAI:
     return _client
 
 
-def chat(prompt: str, system: str = "", temperature: float = 0.3, max_tokens: int = 1000, background: bool = False) -> str:
+def chat(prompt: str, system: str = "", temperature: float = 0.3, max_tokens: int = 1000,
+         background: bool = False, images=None) -> str:
     """发送对话请求，返回文本回复。模型根据当前 provider 自动选择。
     429 限流时自动退避重试（最多 3 次）。
-    background=True 时走后台任务锁（事件提取等），与主对话锁互不阻塞。"""
+    background=True 时走后台任务锁（事件提取等），与主对话锁互不阻塞。
+    images: 可选，data URL 或图片 URL；非空时按多模态消息发送。"""
     messages = []
     if system:
         messages.append({"role": "system", "content": system})
-    messages.append({"role": "user", "content": prompt})
+    messages.append({"role": "user", "content": build_user_content(prompt, images)})
 
     provider = runtime_settings.effective_provider()
     model = runtime_settings.model_of(provider)
@@ -122,7 +125,7 @@ def chat(prompt: str, system: str = "", temperature: float = 0.3, max_tokens: in
 
 
 def stream_chat(prompt: str, system: str = "", temperature: float = 0.3,
-                max_tokens: int = 5000, background: bool = False):
+                max_tokens: int = 5000, background: bool = False, images=None):
     """流式对话：逐段 yield 文本增量。
 
     与 chat() 共享同一把主/后台锁——流没结束前锁不释放，避免与并发请求
@@ -133,7 +136,7 @@ def stream_chat(prompt: str, system: str = "", temperature: float = 0.3,
     messages = []
     if system:
         messages.append({"role": "system", "content": system})
-    messages.append({"role": "user", "content": prompt})
+    messages.append({"role": "user", "content": build_user_content(prompt, images)})
 
     provider = runtime_settings.effective_provider()
     model = runtime_settings.model_of(provider)

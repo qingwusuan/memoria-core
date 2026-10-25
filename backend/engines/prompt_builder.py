@@ -161,6 +161,19 @@ def _view_block(character_name: str, user_nickname: str, narrative_person: str) 
     )
 
 
+def _mode_block(reply_mode: str) -> str:
+    """日常聊天模式：短、口语、不写旁白。小说模式返回空串，保持原行为。"""
+    if reply_mode != "chat":
+        return ""
+    return (
+        "\n【回复模式：日常聊天（最高优先级，覆盖上文的小说体要求）】\n"
+        "1. 像在发微信一样说话：1~3 句，通常不超过 60 字。\n"
+        "2. 不写动作旁白、不写环境描写、不用括号加动作、不分段铺陈。\n"
+        "3. 对方问什么答什么，可以反问一句；不要复述对方的话，不要总结。\n"
+        "4. 不需要推进剧情，除非对方明确要求。\n"
+    )
+
+
 def build_system_prompt(
     character_guide: str,
     character_name: str = "角色",
@@ -169,6 +182,7 @@ def build_system_prompt(
     suggest_naughty: bool = False,
     user_nickname: str = "用户",
     narrative_person: str = "third",
+    reply_mode: str = "novel",
 ) -> str:
     """构建 system prompt（角色固定指令）。"""
     base = (
@@ -181,6 +195,7 @@ def build_system_prompt(
         f"2. 当多条指令并存时，按「用户当前消息的动作指令 > 指令中心 payload」的顺序执行。\n"
         f"{_address_block(user_nickname, narrative_person)}"
         f"{_view_block(character_name, user_nickname, narrative_person)}"
+        f"{_mode_block(reply_mode)}"
         f"\n{character_guide}\n"
         f"\n【续写要求】\n"
         f"1. 优先从【近期对话】的最后一条消息末尾自然接续，保持场景、情绪、叙事节奏连贯，不要另起炉灶。\n"
@@ -295,6 +310,7 @@ def build_chat_messages(
     action: str = "",
     early_summary: str = "",
     narrative_person: str = "third",
+    reply_mode: str = "novel",
 ) -> tuple[str, str]:
     """
     一次调用返回 (system_prompt, user_prompt)，可直接喂给 LLM。
@@ -306,6 +322,7 @@ def build_chat_messages(
         suggest_naughty=suggest_naughty,
         user_nickname=user_nickname,
         narrative_person=narrative_person,
+        reply_mode=reply_mode,
     )
     # 指令双通道注入：instructions 同时注入 system prompt（system 权重高于 user，
     # 避免模型忽略 user prompt 中的指令区块导致「字数加强」等指令不生效）
@@ -324,7 +341,8 @@ def build_chat_messages(
             "按故事节奏自然推进，不受真实时钟限制。"
         )
     # 字数加强专用：system 层长度锚定（质量导向，非机械强制），与前端 payload 措辞保持一致
-    if instructions and any("字数加强" in inst for inst in instructions):
+    # 日常聊天模式下忽略：该指令与「短回复」直接冲突
+    if reply_mode != "chat" and instructions and any("字数加强" in inst for inst in instructions):
         system = system + (
             "\n\n【写作篇幅要求（配合字数加强指令，必须严格执行）】\n"
             "本次正文篇幅以500~1500字为验收范围，自然展开即可，不必硬凑。"
